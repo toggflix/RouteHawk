@@ -1,0 +1,10 @@
+services:
+  routehawk-demo-target:
+    build:
+      context: ..
+      dockerfile: labs/Dockerfile
+    ports:
+      - "8088:8088"
+    environment:
+      ROUTEHAWK_LAB_HOST: "0.0.0.0"
+      ROUTEHAWK_LAB_PORT: "8088"

@@ -1,0 +1,32 @@
+program: routehawk-local-lab
+
+targets:
+  - http://localhost:8088
+
+scope:
+  domains:
+    - localhost
+  cidrs: []
+
+rules:
+  follow_redirects: true
+  reject_out_of_scope_redirects: true
+  max_rps_per_host: 5
+  max_concurrency: 10
+  timeout_seconds: 3
+  user_agent: "RouteHawk/0.1"
+
+scan:
+  passive_first: true
+  download_javascript: true
+  parse_openapi: true
+  parse_robots: true
+  parse_sitemap: true
+  check_common_metadata: true
+  check_auth_behavior: false
+  auth_probe_limit: 20
+
+suppression:
+  ignore_suffixes: []
+  ignore_path_prefixes: []
+  ignore_regexes: []

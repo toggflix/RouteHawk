@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "routehawk"
+version = "0.1.0"
+description = "Scope-safe API and JavaScript reconnaissance assistant for authorized bug bounty workflows."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+  { name = "RouteHawk" }
+]
+license = { text = "MIT" }
+keywords = ["bug-bounty", "recon", "api", "javascript", "security"]
+dependencies = [
+  "httpx>=0.27.0",
+  "PyYAML>=6.0.1",
+  "beautifulsoup4>=4.12.0",
+  "Jinja2>=3.1.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.5.0"
+]
+
+[project.scripts]
+routehawk = "routehawk.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["routehawk*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+

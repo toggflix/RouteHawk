@@ -1,0 +1,69 @@
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any, Dict
+
+from routehawk.core.models import (
+    RouteHawkConfig,
+    RulesConfig,
+    ScanOptions,
+    ScopeConfig,
+    SuppressionConfig,
+)
+
+
+def load_config(path: str) -> RouteHawkConfig:
+    data = _load_yaml(path)
+
+    scope_data = data.get("scope", {})
+    rules_data = data.get("rules", {})
+    scan_data = data.get("scan", {})
+    suppression_data = data.get("suppression", {})
+
+    return RouteHawkConfig(
+        program=data.get("program", "routehawk-program"),
+        scope=ScopeConfig(
+            domains=list(scope_data.get("domains", [])),
+            cidrs=list(scope_data.get("cidrs", [])),
+        ),
+        rules=RulesConfig(
+            follow_redirects=bool(rules_data.get("follow_redirects", True)),
+            reject_out_of_scope_redirects=bool(
+                rules_data.get("reject_out_of_scope_redirects", True)
+            ),
+            max_rps_per_host=int(rules_data.get("max_rps_per_host", 2)),
+            max_concurrency=int(rules_data.get("max_concurrency", 20)),
+            timeout_seconds=int(rules_data.get("timeout_seconds", 10)),
+            user_agent=str(rules_data.get("user_agent", "RouteHawk/0.1")),
+        ),
+        scan=ScanOptions(
+            passive_first=bool(scan_data.get("passive_first", True)),
+            download_javascript=bool(scan_data.get("download_javascript", True)),
+            parse_openapi=bool(scan_data.get("parse_openapi", True)),
+            parse_robots=bool(scan_data.get("parse_robots", True)),
+            parse_sitemap=bool(scan_data.get("parse_sitemap", True)),
+            check_common_metadata=bool(scan_data.get("check_common_metadata", True)),
+            check_auth_behavior=bool(scan_data.get("check_auth_behavior", False)),
+            auth_probe_limit=int(scan_data.get("auth_probe_limit", 20)),
+        ),
+        suppression=SuppressionConfig(
+            ignore_suffixes=list(suppression_data.get("ignore_suffixes", [])),
+            ignore_path_prefixes=list(suppression_data.get("ignore_path_prefixes", [])),
+            ignore_regexes=list(suppression_data.get("ignore_regexes", [])),
+        ),
+        targets=list(data.get("targets", [])),
+    )
+
+
+def _load_yaml(path: str) -> Dict[str, Any]:
+    try:
+        import yaml
+    except ImportError as exc:
+        raise RuntimeError("PyYAML is required to load config files. Run: py -m pip install -e .") from exc
+
+    loaded = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise ValueError("Config file must contain a YAML mapping at the top level.")
+    return loaded
