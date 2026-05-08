@@ -883,31 +883,48 @@ def _diff_changed_column(items: object) -> str:
     )
     rows = []
     for item in item_list[:8]:
-        current = item.get("current", {})
+        current_data = item.get("current", {})
+        current = current_data if isinstance(current_data, dict) else {}
+        deltas = item.get("deltas", {})
+        delta_map = deltas if isinstance(deltas, dict) else {}
         endpoint = escape(str(item.get("endpoint", "")))
         previous_score = escape(str(item.get("previous_risk_score", 0)))
         current_score = escape(str(item.get("current_risk_score", 0)))
-        sources = _diff_sources(current if isinstance(current, dict) else {})
+        confidence = _diff_confidence(current)
+        sources = _diff_sources(current)
+        source_urls = _safe_int(current.get("source_urls_count", 0))
+        reason_count = _safe_int(current.get("risk_reason_count", 0))
+        reason_preview = _diff_reason_preview(current)
+        delta_lines = _changed_delta_lines(delta_map)
         rows.append(
             '<div class="diff-item">'
             f"<code>{endpoint}</code>"
-            f'<div class="diff-meta">risk {previous_score} -> {current_score} | sources {sources}</div>'
+            f'<div class="diff-meta">risk {previous_score} -> {current_score} | confidence {escape(confidence)}</div>'
+            f'<div class="diff-meta">sources {sources} | source URLs {source_urls} | reasons {reason_count}</div>'
+            f'<div class="diff-meta">reason preview {reason_preview}</div>'
+            f"{delta_lines}"
             "</div>"
         )
-    body = _diff_count_line(len(rows), len(item_list)) + "".join(rows) if rows else '<p class="hint">No risk score changes.</p>'
-    return f'<div class="diff-column"><h3>Changed risk</h3><div class="diff-list">{body}</div></div>'
+    body = _diff_count_line(len(rows), len(item_list)) + "".join(rows) if rows else '<p class="hint">No changed endpoints.</p>'
+    return f'<div class="diff-column"><h3>Changed endpoints</h3><div class="diff-list">{body}</div></div>'
 
 
 def _diff_item(item: Dict[str, object]) -> str:
     endpoint = escape(str(item.get("endpoint", "")))
     score = escape(str(item.get("risk_score", 0)))
+    confidence = escape(_diff_confidence(item))
     sources = _diff_sources(item)
     tags = _diff_tags(item)
+    source_urls = escape(str(_safe_int(item.get("source_urls_count", 0))))
+    reason_count = escape(str(_safe_int(item.get("risk_reason_count", 0))))
+    reason_preview = _diff_reason_preview(item)
     return (
         '<div class="diff-item">'
         f"<code>{endpoint}</code>"
-        f'<div class="diff-meta">risk {score} | sources {sources}</div>'
+        f'<div class="diff-meta">risk {score} | confidence {confidence} | sources {sources}</div>'
         f'<div class="diff-meta">tags {tags}</div>'
+        f'<div class="diff-meta">source URLs {source_urls} | reasons {reason_count}</div>'
+        f'<div class="diff-meta">reason preview {reason_preview}</div>'
         "</div>"
     )
 
@@ -924,6 +941,20 @@ def _diff_tags(item: Dict[str, object]) -> str:
     if not isinstance(tags, list) or not tags:
         return "none"
     return escape(", ".join(str(tag) for tag in tags))
+
+
+def _diff_confidence(item: Dict[str, object]) -> str:
+    value = str(item.get("extraction_confidence", "medium")).strip().lower()
+    if value in {"high", "medium", "low"}:
+        return value
+    return "medium"
+
+
+def _diff_reason_preview(item: Dict[str, object]) -> str:
+    preview = item.get("risk_reasons_preview", [])
+    if not isinstance(preview, list) or not preview:
+        return "none"
+    return escape(", ".join(str(reason) for reason in preview))
 
 
 def _dict_list(value: object) -> list:
@@ -1077,7 +1108,7 @@ def _compare_diff_details(diff: Dict[str, object]) -> str:
         "<h3>Detailed compare</h3>"
         + _compare_endpoint_table("New endpoints", new_items, "No new endpoints.")
         + _compare_endpoint_table("Removed endpoints", removed_items, "No removed endpoints.")
-        + _compare_changed_table(changed_items)
+        + _compare_changed_table(changed_items, "No changed endpoints.")
         + "</div>"
     )
 
@@ -1089,54 +1120,110 @@ def _compare_endpoint_table(title: str, items: list, empty: str) -> str:
     for item in sorted(items, key=lambda row: _safe_int(row.get("risk_score")), reverse=True):
         endpoint = escape(str(item.get("endpoint", "")))
         risk = _risk_badge(_safe_int(item.get("risk_score")))
+        confidence = escape(_diff_confidence(item))
         tags = _diff_tags(item)
         sources = _diff_sources(item)
+        source_urls = escape(str(_safe_int(item.get("source_urls_count", 0))))
+        reason_count = escape(str(_safe_int(item.get("risk_reason_count", 0))))
+        reason_preview = _diff_reason_preview(item)
         rows.append(
             "<tr>"
             f"<td><code>{endpoint}</code></td>"
             f"<td>{risk}</td>"
+            f"<td>{confidence}</td>"
             f"<td>{sources}</td>"
             f"<td>{tags}</td>"
+            f"<td>source URLs {source_urls}<br>reasons {reason_count}<br>preview {reason_preview}</td>"
             "</tr>"
         )
     return (
         f'<div class="compare-section"><h3>{escape(title)}</h3>'
         '<table class="compare-table"><thead><tr>'
-        "<th>Endpoint</th><th>Risk</th><th>Sources</th><th>Tags</th>"
+        "<th>Endpoint</th><th>Risk</th><th>Confidence</th><th>Sources</th><th>Tags</th><th>Evidence</th>"
         "</tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
     )
 
 
-def _compare_changed_table(items: list) -> str:
+def _compare_changed_table(items: list, empty: str) -> str:
     if not items:
-        return '<div class="compare-section"><h3>Changed risk</h3><p class="hint">No changed risk scores.</p></div>'
+        return f'<div class="compare-section"><h3>Changed endpoints</h3><p class="hint">{escape(empty)}</p></div>'
     rows = []
     for item in sorted(items, key=lambda row: _safe_int(row.get("current_risk_score")), reverse=True):
         endpoint = escape(str(item.get("endpoint", "")))
-        previous = _risk_badge(_safe_int(item.get("previous_risk_score")))
-        current = _risk_badge(_safe_int(item.get("current_risk_score")))
+        previous = _safe_int(item.get("previous_risk_score"))
+        current = _safe_int(item.get("current_risk_score"))
+        current_badge = _risk_badge(current)
         current_data = item.get("current", {})
         data = current_data if isinstance(current_data, dict) else {}
+        changes = item.get("deltas", {})
+        delta_map = changes if isinstance(changes, dict) else {}
         sources = _diff_sources(data)
         tags = _diff_tags(data)
+        confidence = _diff_confidence(data)
+        source_urls = _safe_int(data.get("source_urls_count", 0))
+        reason_count = _safe_int(data.get("risk_reason_count", 0))
+        reason_preview = _diff_reason_preview(data)
+        change_details = (
+            f"<div>risk score: {escape(str(previous))} -> {escape(str(current))}</div>"
+            + _changed_delta_lines(delta_map, use_blocks=True)
+        )
         rows.append(
             "<tr>"
             f"<td><code>{endpoint}</code></td>"
-            f"<td>{previous} -> {current}</td>"
-            f"<td>{sources}</td>"
-            f"<td>{tags}</td>"
+            f"<td>{change_details}</td>"
+            f"<td>{current_badge}<br>confidence {escape(confidence)}<br>sources {sources}<br>tags {tags}<br>source URLs {escape(str(source_urls))}<br>reasons {escape(str(reason_count))}<br>preview {reason_preview}</td>"
             "</tr>"
         )
     return (
-        '<div class="compare-section"><h3>Changed risk</h3>'
+        '<div class="compare-section"><h3>Changed endpoints</h3>'
         '<table class="compare-table"><thead><tr>'
-        "<th>Endpoint</th><th>Risk (previous -> current)</th><th>Sources</th><th>Tags</th>"
+        "<th>Endpoint</th><th>What changed</th><th>Current snapshot</th>"
         "</tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
     )
+
+
+def _changed_delta_lines(delta_map: Dict[str, object], use_blocks: bool = False) -> str:
+    if not delta_map:
+        return ""
+    lines = []
+    confidence = delta_map.get("extraction_confidence")
+    if isinstance(confidence, dict):
+        lines.append(_delta_line("confidence", confidence))
+    tags = delta_map.get("tags")
+    if isinstance(tags, dict):
+        lines.append(_delta_list_line("tags", tags))
+    sources = delta_map.get("sources")
+    if isinstance(sources, dict):
+        lines.append(_delta_list_line("sources", sources))
+    source_urls = delta_map.get("source_urls")
+    if isinstance(source_urls, dict):
+        lines.append(_delta_list_line("source URLs", source_urls))
+    reasons = delta_map.get("risk_reasons")
+    if isinstance(reasons, dict):
+        lines.append(_delta_list_line("risk reasons", reasons))
+    if not lines:
+        return ""
+    if use_blocks:
+        return "".join(f'<div>{line}</div>' for line in lines)
+    return "".join(f'<div class="diff-meta">{line}</div>' for line in lines)
+
+
+def _delta_line(label: str, payload: Dict[str, object]) -> str:
+    previous = escape(str(payload.get("previous", "")))
+    current = escape(str(payload.get("current", "")))
+    return f"{escape(label)}: {previous} -> {current}"
+
+
+def _delta_list_line(label: str, payload: Dict[str, object]) -> str:
+    added = payload.get("added")
+    removed = payload.get("removed")
+    added_values = ", ".join(str(value) for value in added) if isinstance(added, list) and added else "none"
+    removed_values = ", ".join(str(value) for value in removed) if isinstance(removed, list) and removed else "none"
+    return f"{escape(label)}: +[{escape(added_values)}] -[{escape(removed_values)}]"
 
 
 def _risk_badge(score: int) -> str:
