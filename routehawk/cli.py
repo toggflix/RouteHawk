@@ -460,7 +460,16 @@ def _endpoints_from_text(
 ) -> list:
     endpoints = []
     for raw in extract_endpoints(text, suppression):
-        endpoints.append(_endpoint_from_extracted(raw.method, raw.path, raw.parameters, source, source_url))
+        endpoints.append(
+            _endpoint_from_extracted(
+                raw.method,
+                raw.path,
+                raw.parameters,
+                source,
+                source_url,
+                confidence=raw.confidence,
+            )
+        )
     return endpoints
 
 
@@ -471,6 +480,7 @@ def _endpoint_from_extracted(
     parameters: list,
     source: str,
     source_url: str,
+    confidence: str = "medium",
 ) -> Endpoint:
     normalized = normalize_path(raw_path)
     tags = classify_endpoint(method, normalized)
@@ -483,6 +493,7 @@ def _endpoint_from_extracted(
         normalized_path=normalized,
         parameters=parameters,
         tags=tags,
+        extraction_confidence=_normalize_extraction_confidence(confidence),
         risk_score=risk_score,
         risk_reasons=risk_reasons,
         confidence="low",
@@ -508,6 +519,10 @@ def _dedupe_endpoints(endpoints: list) -> list:
         existing.parameters = sorted(set(existing.parameters + endpoint.parameters))
         existing.tags = sorted(set(existing.tags + endpoint.tags))
         existing.risk_reasons = sorted(set(existing.risk_reasons + endpoint.risk_reasons))
+        existing.extraction_confidence = _max_extraction_confidence(
+            existing.extraction_confidence,
+            endpoint.extraction_confidence,
+        )
         if endpoint.risk_score > existing.risk_score:
             existing.source = endpoint.source
             existing.source_url = endpoint.source_url
@@ -646,6 +661,7 @@ def _extract_js(args: argparse.Namespace) -> int:
             normalized_path=normalized,
             parameters=raw.parameters,
             tags=tags,
+            extraction_confidence=_normalize_extraction_confidence(raw.confidence),
             risk_score=score,
             risk_reasons=reasons,
             confidence="low",
@@ -938,6 +954,20 @@ def _safe_int(value: object) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _normalize_extraction_confidence(value: str) -> str:
+    lowered = (value or "").strip().lower()
+    if lowered in {"high", "medium", "low"}:
+        return lowered
+    return "medium"
+
+
+def _max_extraction_confidence(left: str, right: str) -> str:
+    rank = {"low": 1, "medium": 2, "high": 3}
+    normalized_left = _normalize_extraction_confidence(left)
+    normalized_right = _normalize_extraction_confidence(right)
+    return normalized_left if rank[normalized_left] >= rank[normalized_right] else normalized_right
 
 
 if __name__ == "__main__":

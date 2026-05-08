@@ -74,6 +74,7 @@ class Endpoint:
     normalized_path: str
     parameters: List[str] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)
+    extraction_confidence: str = "medium"
     risk_score: int = 0
     risk_reasons: List[str] = field(default_factory=list)
     confidence: str = "medium"

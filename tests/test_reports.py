@@ -1,6 +1,7 @@
 import unittest
 
 from routehawk.cli import _dedupe_endpoints, _findings_from_endpoints
+from routehawk.collectors.openapi import endpoints_from_openapi
 from routehawk.core.models import Endpoint, JavaScriptFile, MetadataRecord, ScanResult
 from routehawk.reports.html import render_html
 from routehawk.reports.markdown import render_markdown
@@ -17,6 +18,7 @@ class ReportTests(unittest.TestCase):
                 raw_path="/api/users/1/billing",
                 normalized_path="/api/users/{id}/billing",
                 tags=["object-reference", "billing"],
+                extraction_confidence="medium",
                 risk_score=80,
                 sources=["javascript"],
                 source_urls=["https://example.com/main.js"],
@@ -29,6 +31,7 @@ class ReportTests(unittest.TestCase):
                 raw_path="/api/users/{id}/billing",
                 normalized_path="/api/users/{id}/billing",
                 tags=["object-reference", "billing", "user-object"],
+                extraction_confidence="high",
                 risk_score=85,
                 sources=["openapi"],
                 source_urls=["https://example.com/swagger.json"],
@@ -41,6 +44,7 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(len(merged), 1)
         self.assertEqual(merged[0].risk_score, 85)
         self.assertEqual(merged[0].sources, ["javascript", "openapi"])
+        self.assertEqual(merged[0].extraction_confidence, "high")
         self.assertEqual(merged[0].confidence, "high")
         self.assertIn("Corroborated by 2 source URLs", merged[0].evidence)
         self.assertIn("Endpoint found in javascript", merged[0].evidence)
@@ -103,9 +107,10 @@ class ReportTests(unittest.TestCase):
         self.assertIn("/api/users/{id}/billing", html)
         self.assertIn("filter-search", html)
         self.assertIn("filter-status", html)
-        self.assertIn("Endpoint confidence:", markdown)
+        self.assertIn("Extraction confidence:", markdown)
         self.assertIn("Risk reasons:", markdown)
         self.assertIn("Risk Signals", html)
+        self.assertIn("Extraction Confidence", html)
         self.assertIn("data-copy-checklist", html)
         self.assertIn("data-copy-draft", html)
         self.assertIn("Copy finding draft", html)
@@ -165,6 +170,28 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(len(findings), 1)
         self.assertEqual(findings[0].type, "graphql_candidate")
         self.assertIn("GraphQL-shaped requests", " ".join(findings[0].manual_check))
+
+    def test_openapi_collector_marks_endpoints_high_extraction_confidence(self):
+        spec = {
+            "paths": {
+                "/api/users/{id}/billing": {
+                    "get": {},
+                }
+            }
+        }
+        endpoints = endpoints_from_openapi(spec, "https://example.com/swagger.json")
+        self.assertEqual(len(endpoints), 1)
+        self.assertEqual(endpoints[0].extraction_confidence, "high")
+
+    def test_endpoint_model_uses_default_extraction_confidence_for_backward_compat(self):
+        endpoint = Endpoint(
+            source="javascript",
+            source_url="https://example.com/main.js",
+            method="GET",
+            raw_path="/api/users/1/billing",
+            normalized_path="/api/users/{id}/billing",
+        )
+        self.assertEqual(endpoint.extraction_confidence, "medium")
 
 
 if __name__ == "__main__":

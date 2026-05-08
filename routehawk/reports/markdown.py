@@ -97,7 +97,7 @@ def render_markdown(result: ScanResult) -> str:
                     f"### {endpoint.method} `{endpoint.normalized_path}`",
                     "",
                     f"- Risk score: {endpoint.risk_score}",
-                    f"- Endpoint confidence: {endpoint.confidence}",
+                    f"- Extraction confidence: {endpoint.extraction_confidence}",
                     f"- Sources: {sources}",
                     f"- Tags: {tags}",
                     f"- Source URLs: {len(endpoint.source_urls or [endpoint.source_url])}",

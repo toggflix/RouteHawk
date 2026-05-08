@@ -295,7 +295,7 @@ def render_html(result: ScanResult, triage_load_url: str = "", triage_update_url
             <th>Method</th>
             <th>Route</th>
             <th>Risk</th>
-            <th>Confidence</th>
+            <th>Extraction Confidence</th>
             <th>Sources</th>
             <th>Tags</th>
             <th>Risk Signals</th>
@@ -661,7 +661,7 @@ def _endpoint_row(endpoint: Endpoint) -> str:
         f"<td>{escape(endpoint.method)}</td>"
         f"<td><code>{escape(endpoint.normalized_path)}</code><br><span class=\"meta\">Raw variants: {len(endpoint.raw_paths or [endpoint.raw_path])}</span></td>"
         f'<td><span class="score {severity}">{endpoint.risk_score}</span><br><span class="meta">{escape(severity)}</span></td>'
-        f"<td>{escape(endpoint.confidence)}</td>"
+        f"<td>{escape(endpoint.extraction_confidence)}</td>"
         f'<td title="{escape(source_title)}">{_pills(sources)}</td>'
         f"<td>{tag_html}</td>"
         f"<td>{reason_html}</td>"
