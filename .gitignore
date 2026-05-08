@@ -14,7 +14,7 @@ build/
 .cache/
 .routehawk/
 *.sqlite
-reports/
+/reports/
 results.json
 report.html
 report.md
