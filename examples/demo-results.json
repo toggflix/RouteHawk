@@ -107,6 +107,13 @@
         "user-object"
       ],
       "risk_score": 95,
+      "risk_reasons": [
+        "+10 route discovered in frontend JavaScript",
+        "+25 admin/authorization keyword present",
+        "+25 sensitive business or user resource keyword",
+        "+30 object identifier pattern in normalized route"
+      ],
+      "confidence": "high",
       "sources": [
         "javascript",
         "openapi"
@@ -125,6 +132,10 @@
         "Corroborated by 2 source URLs",
         "Endpoint found in javascript",
         "Endpoint found in openapi",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +25 admin/authorization keyword present",
+        "Risk signal: +25 sensitive business or user resource keyword",
+        "Risk signal: +30 object identifier pattern in normalized route",
         "Roles or permissions related path",
         "User/account/customer object keyword"
       ]
@@ -142,6 +153,13 @@
         "user-object"
       ],
       "risk_score": 85,
+      "risk_reasons": [
+        "+10 route discovered in frontend JavaScript",
+        "+15 method GET often exposes object-level authz checks",
+        "+25 sensitive business or user resource keyword",
+        "+30 object identifier pattern in normalized route"
+      ],
+      "confidence": "high",
       "sources": [
         "javascript",
         "openapi",
@@ -163,6 +181,10 @@
         "Endpoint found in javascript",
         "Endpoint found in openapi",
         "Endpoint found in sitemap",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +25 sensitive business or user resource keyword",
+        "Risk signal: +30 object identifier pattern in normalized route",
         "User/account/customer object keyword"
       ]
     },
@@ -178,6 +200,13 @@
         "user-object"
       ],
       "risk_score": 80,
+      "risk_reasons": [
+        "+30 object identifier pattern in normalized route",
+        "+25 sensitive business or user resource keyword",
+        "+15 method GET often exposes object-level authz checks",
+        "+10 route discovered in frontend JavaScript"
+      ],
+      "confidence": "low",
       "sources": [
         "javascript"
       ],
@@ -190,6 +219,10 @@
       "evidence": [
         "Contains object identifier pattern",
         "Endpoint found in javascript",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +25 sensitive business or user resource keyword",
+        "Risk signal: +30 object identifier pattern in normalized route",
         "User/account/customer object keyword"
       ]
     },
@@ -205,6 +238,13 @@
         "object-reference"
       ],
       "risk_score": 80,
+      "risk_reasons": [
+        "+30 object identifier pattern in normalized route",
+        "+25 sensitive business or user resource keyword",
+        "+15 method GET often exposes object-level authz checks",
+        "+10 route discovered in frontend JavaScript"
+      ],
+      "confidence": "low",
       "sources": [
         "javascript"
       ],
@@ -217,7 +257,11 @@
       "evidence": [
         "Business object keyword",
         "Contains object identifier pattern",
-        "Endpoint found in javascript"
+        "Endpoint found in javascript",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +25 sensitive business or user resource keyword",
+        "Risk signal: +30 object identifier pattern in normalized route"
       ]
     },
     {
@@ -232,6 +276,12 @@
         "internal"
       ],
       "risk_score": 50,
+      "risk_reasons": [
+        "+10 route discovered in frontend JavaScript",
+        "+15 method GET often exposes object-level authz checks",
+        "+20 internal/debug keyword present"
+      ],
+      "confidence": "high",
       "sources": [
         "javascript",
         "openapi"
@@ -248,7 +298,10 @@
         "Debug/metrics/config route keyword",
         "Endpoint found in javascript",
         "Endpoint found in openapi",
-        "Internal/private route keyword"
+        "Internal/private route keyword",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +20 internal/debug keyword present"
       ]
     },
     {
@@ -262,6 +315,12 @@
         "graphql"
       ],
       "risk_score": 45,
+      "risk_reasons": [
+        "+10 route discovered in frontend JavaScript",
+        "+15 method GET often exposes object-level authz checks",
+        "+20 GraphQL endpoint behavior candidate"
+      ],
+      "confidence": "medium",
       "sources": [
         "graphql",
         "javascript"
@@ -277,7 +336,10 @@
         "Corroborated by 2 source URLs",
         "Endpoint found in graphql",
         "Endpoint found in javascript",
-        "GraphQL route keyword"
+        "GraphQL route keyword",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +20 GraphQL endpoint behavior candidate"
       ]
     },
     {
@@ -291,6 +353,12 @@
         "debug"
       ],
       "risk_score": 45,
+      "risk_reasons": [
+        "+15 method GET often exposes object-level authz checks",
+        "+10 route discovered in frontend JavaScript",
+        "+20 internal/debug keyword present"
+      ],
+      "confidence": "low",
       "sources": [
         "javascript"
       ],
@@ -302,7 +370,10 @@
       ],
       "evidence": [
         "Debug/metrics/config route keyword",
-        "Endpoint found in javascript"
+        "Endpoint found in javascript",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +20 internal/debug keyword present"
       ]
     },
     {
@@ -316,6 +387,11 @@
         "admin"
       ],
       "risk_score": 40,
+      "risk_reasons": [
+        "+15 method GET often exposes object-level authz checks",
+        "+25 admin/authorization keyword present"
+      ],
+      "confidence": "low",
       "sources": [
         "robots"
       ],
@@ -327,7 +403,9 @@
       ],
       "evidence": [
         "Admin-related path",
-        "Endpoint found in robots"
+        "Endpoint found in robots",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +25 admin/authorization keyword present"
       ]
     },
     {
@@ -339,6 +417,10 @@
       "parameters": [],
       "tags": [],
       "risk_score": 15,
+      "risk_reasons": [
+        "+15 method GET often exposes object-level authz checks"
+      ],
+      "confidence": "low",
       "sources": [
         "robots"
       ],
@@ -349,7 +431,8 @@
         "/api/public"
       ],
       "evidence": [
-        "Endpoint found in robots"
+        "Endpoint found in robots",
+        "Risk signal: +15 method GET often exposes object-level authz checks"
       ]
     }
   ],
@@ -365,6 +448,10 @@
         "Corroborated by 2 source URLs",
         "Endpoint found in javascript",
         "Endpoint found in openapi",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +25 admin/authorization keyword present",
+        "Risk signal: +25 sensitive business or user resource keyword",
+        "Risk signal: +30 object identifier pattern in normalized route",
         "Roles or permissions related path",
         "User/account/customer object keyword"
       ],
@@ -375,7 +462,7 @@
         "Check whether role and permission enforcement happens server-side.",
         "Review response codes, redirects, and partial data disclosure."
       ],
-      "confidence": "medium"
+      "confidence": "high"
     },
     {
       "type": "idor_candidate",
@@ -389,6 +476,10 @@
         "Endpoint found in javascript",
         "Endpoint found in openapi",
         "Endpoint found in sitemap",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +25 sensitive business or user resource keyword",
+        "Risk signal: +30 object identifier pattern in normalized route",
         "User/account/customer object keyword"
       ],
       "manual_check": [
@@ -398,7 +489,7 @@
         "Check status code, response body, and ownership enforcement.",
         "Repeat with read and write methods when authorized by the program rules."
       ],
-      "confidence": "medium"
+      "confidence": "high"
     },
     {
       "type": "idor_candidate",
@@ -408,6 +499,10 @@
       "evidence": [
         "Contains object identifier pattern",
         "Endpoint found in javascript",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +25 sensitive business or user resource keyword",
+        "Risk signal: +30 object identifier pattern in normalized route",
         "User/account/customer object keyword"
       ],
       "manual_check": [
@@ -417,7 +512,7 @@
         "Check status code, response body, and ownership enforcement.",
         "Repeat with read and write methods when authorized by the program rules."
       ],
-      "confidence": "medium"
+      "confidence": "low"
     },
     {
       "type": "idor_candidate",
@@ -427,7 +522,11 @@
       "evidence": [
         "Business object keyword",
         "Contains object identifier pattern",
-        "Endpoint found in javascript"
+        "Endpoint found in javascript",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +25 sensitive business or user resource keyword",
+        "Risk signal: +30 object identifier pattern in normalized route"
       ],
       "manual_check": [
         "Login as User A.",
@@ -436,7 +535,7 @@
         "Check status code, response body, and ownership enforcement.",
         "Repeat with read and write methods when authorized by the program rules."
       ],
-      "confidence": "medium"
+      "confidence": "low"
     },
     {
       "type": "internal_debug_candidate",
@@ -448,7 +547,10 @@
         "Debug/metrics/config route keyword",
         "Endpoint found in javascript",
         "Endpoint found in openapi",
-        "Internal/private route keyword"
+        "Internal/private route keyword",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +20 internal/debug keyword present"
       ],
       "manual_check": [
         "Confirm the route is intentionally exposed to the tested environment.",
@@ -457,7 +559,7 @@
         "Verify whether the endpoint leaks operational metrics or configuration values.",
         "Document only evidence and avoid changing server state."
       ],
-      "confidence": "medium"
+      "confidence": "high"
     },
     {
       "type": "graphql_candidate",
@@ -468,7 +570,10 @@
         "Corroborated by 2 source URLs",
         "Endpoint found in graphql",
         "Endpoint found in javascript",
-        "GraphQL route keyword"
+        "GraphQL route keyword",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +20 GraphQL endpoint behavior candidate"
       ],
       "manual_check": [
         "Confirm the endpoint accepts GraphQL-shaped requests without aggressive probing.",
@@ -486,7 +591,10 @@
       "endpoint": "GET /debug/config",
       "evidence": [
         "Debug/metrics/config route keyword",
-        "Endpoint found in javascript"
+        "Endpoint found in javascript",
+        "Risk signal: +10 route discovered in frontend JavaScript",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +20 internal/debug keyword present"
       ],
       "manual_check": [
         "Confirm the route is intentionally exposed to the tested environment.",
@@ -495,7 +603,7 @@
         "Verify whether the endpoint leaks operational metrics or configuration values.",
         "Document only evidence and avoid changing server state."
       ],
-      "confidence": "medium"
+      "confidence": "low"
     },
     {
       "type": "admin_authz_candidate",
@@ -504,7 +612,9 @@
       "endpoint": "GET /admin",
       "evidence": [
         "Admin-related path",
-        "Endpoint found in robots"
+        "Endpoint found in robots",
+        "Risk signal: +15 method GET often exposes object-level authz checks",
+        "Risk signal: +25 admin/authorization keyword present"
       ],
       "manual_check": [
         "Confirm the route is inside the authorized program scope.",
@@ -513,7 +623,7 @@
         "Check whether role and permission enforcement happens server-side.",
         "Review response codes, redirects, and partial data disclosure."
       ],
-      "confidence": "medium"
+      "confidence": "low"
     }
   ],
   "warnings": []

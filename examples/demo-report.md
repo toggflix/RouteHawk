@@ -32,6 +32,10 @@ Evidence:
 - Corroborated by 2 source URLs
 - Endpoint found in javascript
 - Endpoint found in openapi
+- Risk signal: +10 route discovered in frontend JavaScript
+- Risk signal: +25 admin/authorization keyword present
+- Risk signal: +25 sensitive business or user resource keyword
+- Risk signal: +30 object identifier pattern in normalized route
 - Roles or permissions related path
 - User/account/customer object keyword
 
@@ -51,6 +55,10 @@ Evidence:
 - Endpoint found in javascript
 - Endpoint found in openapi
 - Endpoint found in sitemap
+- Risk signal: +10 route discovered in frontend JavaScript
+- Risk signal: +15 method GET often exposes object-level authz checks
+- Risk signal: +25 sensitive business or user resource keyword
+- Risk signal: +30 object identifier pattern in normalized route
 - User/account/customer object keyword
 
 Manual test:
@@ -65,6 +73,10 @@ Manual test:
 Evidence:
 - Contains object identifier pattern
 - Endpoint found in javascript
+- Risk signal: +10 route discovered in frontend JavaScript
+- Risk signal: +15 method GET often exposes object-level authz checks
+- Risk signal: +25 sensitive business or user resource keyword
+- Risk signal: +30 object identifier pattern in normalized route
 - User/account/customer object keyword
 
 Manual test:
@@ -80,6 +92,10 @@ Evidence:
 - Business object keyword
 - Contains object identifier pattern
 - Endpoint found in javascript
+- Risk signal: +10 route discovered in frontend JavaScript
+- Risk signal: +15 method GET often exposes object-level authz checks
+- Risk signal: +25 sensitive business or user resource keyword
+- Risk signal: +30 object identifier pattern in normalized route
 
 Manual test:
 - Login as User A.
@@ -96,6 +112,9 @@ Evidence:
 - Endpoint found in javascript
 - Endpoint found in openapi
 - Internal/private route keyword
+- Risk signal: +10 route discovered in frontend JavaScript
+- Risk signal: +15 method GET often exposes object-level authz checks
+- Risk signal: +20 internal/debug keyword present
 
 Manual test:
 - Confirm the route is intentionally exposed to the tested environment.
@@ -111,6 +130,9 @@ Evidence:
 - Endpoint found in graphql
 - Endpoint found in javascript
 - GraphQL route keyword
+- Risk signal: +10 route discovered in frontend JavaScript
+- Risk signal: +15 method GET often exposes object-level authz checks
+- Risk signal: +20 GraphQL endpoint behavior candidate
 
 Manual test:
 - Confirm the endpoint accepts GraphQL-shaped requests without aggressive probing.
@@ -124,6 +146,9 @@ Manual test:
 Evidence:
 - Debug/metrics/config route keyword
 - Endpoint found in javascript
+- Risk signal: +10 route discovered in frontend JavaScript
+- Risk signal: +15 method GET often exposes object-level authz checks
+- Risk signal: +20 internal/debug keyword present
 
 Manual test:
 - Confirm the route is intentionally exposed to the tested environment.
@@ -137,6 +162,8 @@ Manual test:
 Evidence:
 - Admin-related path
 - Endpoint found in robots
+- Risk signal: +15 method GET often exposes object-level authz checks
+- Risk signal: +25 admin/authorization keyword present
 
 Manual test:
 - Confirm the route is inside the authorized program scope.
@@ -178,65 +205,83 @@ Manual test:
 ### POST `/api/admin/users/{id}/role`
 
 - Risk score: 95
+- Endpoint confidence: high
 - Sources: javascript, openapi
 - Tags: admin, authorization, object-reference, user-object
 - Source URLs: 2
+- Risk reasons: +10 route discovered in frontend JavaScript, +25 admin/authorization keyword present, +25 sensitive business or user resource keyword, +30 object identifier pattern in normalized route
 
 ### GET `/api/users/{id}/billing`
 
 - Risk score: 85
+- Endpoint confidence: high
 - Sources: javascript, openapi, sitemap
 - Tags: billing, object-reference, user-object
 - Source URLs: 3
+- Risk reasons: +10 route discovered in frontend JavaScript, +15 method GET often exposes object-level authz checks, +25 sensitive business or user resource keyword, +30 object identifier pattern in normalized route
 
 ### GET `/api/users/{id}/profile`
 
 - Risk score: 80
+- Endpoint confidence: low
 - Sources: javascript
 - Tags: object-reference, user-object
 - Source URLs: 1
+- Risk reasons: +30 object identifier pattern in normalized route, +25 sensitive business or user resource keyword, +15 method GET often exposes object-level authz checks, +10 route discovered in frontend JavaScript
 
 ### GET `/api/orders/{id}`
 
 - Risk score: 80
+- Endpoint confidence: low
 - Sources: javascript
 - Tags: business-object, object-reference
 - Source URLs: 1
+- Risk reasons: +30 object identifier pattern in normalized route, +25 sensitive business or user resource keyword, +15 method GET often exposes object-level authz checks, +10 route discovered in frontend JavaScript
 
 ### GET `/internal/metrics`
 
 - Risk score: 50
+- Endpoint confidence: high
 - Sources: javascript, openapi
 - Tags: debug, internal
 - Source URLs: 2
+- Risk reasons: +10 route discovered in frontend JavaScript, +15 method GET often exposes object-level authz checks, +20 internal/debug keyword present
 
 ### GET `/graphql`
 
 - Risk score: 45
+- Endpoint confidence: medium
 - Sources: graphql, javascript
 - Tags: graphql
 - Source URLs: 2
+- Risk reasons: +10 route discovered in frontend JavaScript, +15 method GET often exposes object-level authz checks, +20 GraphQL endpoint behavior candidate
 
 ### GET `/debug/config`
 
 - Risk score: 45
+- Endpoint confidence: low
 - Sources: javascript
 - Tags: debug
 - Source URLs: 1
+- Risk reasons: +15 method GET often exposes object-level authz checks, +10 route discovered in frontend JavaScript, +20 internal/debug keyword present
 
 ### GET `/admin`
 
 - Risk score: 40
+- Endpoint confidence: low
 - Sources: robots
 - Tags: admin
 - Source URLs: 1
+- Risk reasons: +15 method GET often exposes object-level authz checks, +25 admin/authorization keyword present
 
 ### GET `/api/public`
 
 - Risk score: 15
+- Endpoint confidence: low
 - Sources: robots
 - Tags: none
 - Source URLs: 1
+- Risk reasons: +15 method GET often exposes object-level authz checks
 
 ## Warnings
 

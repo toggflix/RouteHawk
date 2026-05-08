@@ -15,7 +15,8 @@ from routehawk.analyzers.idor_candidates import (
     GRAPHQL_CHECKLIST,
     INTERNAL_DEBUG_CHECKLIST,
     MANUAL_IDOR_CHECKLIST,
-    score_endpoint,
+    endpoint_confidence,
+    score_endpoint_with_reasons,
     severity_for_score,
 )
 from routehawk.analyzers.route_classifier import classify_endpoint
@@ -174,65 +175,68 @@ async def _run_scan(
     result = ScanResult(target=target, scope=scope_domains)
     root_url = _origin(target)
 
-    html = ""
     try:
-        response = await client.get_text(target)
-        html = response.text
-        parsed = urlparse(response.url)
-        result.assets.append(
-            Asset(
-                host=parsed.hostname or "",
-                scheme=parsed.scheme,
-                status=response.status_code,
-                title=_extract_title(response.text),
-                technologies=fingerprint_headers(response.headers),
+        html = ""
+        try:
+            response = await client.get_text(target)
+            html = response.text
+            parsed = urlparse(response.url)
+            result.assets.append(
+                Asset(
+                    host=parsed.hostname or "",
+                    scheme=parsed.scheme,
+                    status=response.status_code,
+                    title=_extract_title(response.text),
+                    technologies=fingerprint_headers(response.headers),
+                )
             )
-        )
-        result.metadata.extend(_header_metadata(response.url, response.status_code, response.headers))
-    except Exception as exc:
-        result.warnings.append(f"Target fetch failed for {target}: {exc}")
+            result.metadata.extend(_header_metadata(response.url, response.status_code, response.headers))
+        except Exception as exc:
+            result.warnings.append(f"Target fetch failed for {target}: {exc}")
+            return result
+
+        if html and options.download_javascript:
+            javascript_urls = extract_javascript_assets(target, html, validator)
+            for javascript_url in javascript_urls:
+                try:
+                    cached = await download_javascript(
+                        client,
+                        javascript_url,
+                        Path(".cache") / "javascript",
+                    )
+                    javascript_text = cached.path.read_text(encoding="utf-8", errors="ignore")
+                except Exception as exc:
+                    result.warnings.append(f"JavaScript fetch failed for {javascript_url}: {exc}")
+                    continue
+                endpoints = _endpoints_from_text(javascript_text, "javascript", javascript_url, suppression)
+                result.javascript_files.append(
+                    JavaScriptFile(
+                        url=javascript_url,
+                        sha256=cached.sha256,
+                        cache_path=str(cached.path),
+                        size=cached.size,
+                        endpoints_found=len(endpoints),
+                    )
+                )
+                result.endpoints.extend(endpoints)
+
+        if options.parse_robots:
+            await _collect_robots(client, root_url, result, validator, suppression)
+        if options.parse_sitemap:
+            await _collect_sitemap(client, root_url, result, validator, suppression)
+        if options.parse_openapi:
+            await _collect_openapi(client, root_url, result)
+        if options.check_common_metadata:
+            await _collect_security_txt(client, root_url, result)
+            await _collect_graphql(client, root_url, result, suppression)
+
+        result.endpoints = _dedupe_endpoints(result.endpoints)
+        if options.check_auth_behavior:
+            await _collect_auth_behavior(client, root_url, result, options.auth_probe_limit)
+        result.findings = _findings_from_endpoints(target, result.endpoints)
         return result
-
-    if html and options.download_javascript:
-        javascript_urls = extract_javascript_assets(target, html, validator)
-        for javascript_url in javascript_urls:
-            try:
-                cached = await download_javascript(
-                    client,
-                    javascript_url,
-                    Path(".cache") / "javascript",
-                )
-                javascript_text = cached.path.read_text(encoding="utf-8", errors="ignore")
-            except Exception as exc:
-                result.warnings.append(f"JavaScript fetch failed for {javascript_url}: {exc}")
-                continue
-            endpoints = _endpoints_from_text(javascript_text, "javascript", javascript_url, suppression)
-            result.javascript_files.append(
-                JavaScriptFile(
-                    url=javascript_url,
-                    sha256=cached.sha256,
-                    cache_path=str(cached.path),
-                    size=cached.size,
-                    endpoints_found=len(endpoints),
-                )
-            )
-            result.endpoints.extend(endpoints)
-
-    if options.parse_robots:
-        await _collect_robots(client, root_url, result, validator, suppression)
-    if options.parse_sitemap:
-        await _collect_sitemap(client, root_url, result, validator, suppression)
-    if options.parse_openapi:
-        await _collect_openapi(client, root_url, result)
-    if options.check_common_metadata:
-        await _collect_security_txt(client, root_url, result)
-        await _collect_graphql(client, root_url, result, suppression)
-
-    result.endpoints = _dedupe_endpoints(result.endpoints)
-    if options.check_auth_behavior:
-        await _collect_auth_behavior(client, root_url, result, options.auth_probe_limit)
-    result.findings = _findings_from_endpoints(target, result.endpoints)
-    return result
+    finally:
+        await client.aclose()
 
 
 async def _collect_robots(
@@ -456,7 +460,16 @@ def _endpoints_from_text(
 ) -> list:
     endpoints = []
     for raw in extract_endpoints(text, suppression):
-        endpoints.append(_endpoint_from_extracted(raw.method, raw.path, raw.parameters, source, source_url))
+        endpoints.append(
+            _endpoint_from_extracted(
+                raw.method,
+                raw.path,
+                raw.parameters,
+                source,
+                source_url,
+                confidence=raw.confidence,
+            )
+        )
     return endpoints
 
 
@@ -467,9 +480,11 @@ def _endpoint_from_extracted(
     parameters: list,
     source: str,
     source_url: str,
+    confidence: str = "medium",
 ) -> Endpoint:
     normalized = normalize_path(raw_path)
     tags = classify_endpoint(method, normalized)
+    risk_score, risk_reasons = score_endpoint_with_reasons(method, normalized, tags, source=source)
     return Endpoint(
         source=source,
         source_url=source_url,
@@ -478,7 +493,10 @@ def _endpoint_from_extracted(
         normalized_path=normalized,
         parameters=parameters,
         tags=tags,
-        risk_score=score_endpoint(method, normalized, tags, source=source),
+        extraction_confidence=_normalize_extraction_confidence(confidence),
+        risk_score=risk_score,
+        risk_reasons=risk_reasons,
+        confidence="low",
         sources=[source],
         source_urls=[source_url],
         raw_paths=[raw_path],
@@ -500,6 +518,11 @@ def _dedupe_endpoints(endpoints: list) -> list:
         existing.raw_paths = sorted(set(existing.raw_paths + endpoint.raw_paths))
         existing.parameters = sorted(set(existing.parameters + endpoint.parameters))
         existing.tags = sorted(set(existing.tags + endpoint.tags))
+        existing.risk_reasons = sorted(set(existing.risk_reasons + endpoint.risk_reasons))
+        existing.extraction_confidence = _max_extraction_confidence(
+            existing.extraction_confidence,
+            endpoint.extraction_confidence,
+        )
         if endpoint.risk_score > existing.risk_score:
             existing.source = endpoint.source
             existing.source_url = endpoint.source_url
@@ -507,6 +530,21 @@ def _dedupe_endpoints(endpoints: list) -> list:
             existing.risk_score = endpoint.risk_score
 
     for endpoint in seen.values():
+        endpoint.confidence = endpoint_confidence(
+            sources=endpoint.sources,
+            source_url_count=len(endpoint.source_urls),
+            raw_path_count=len(endpoint.raw_paths),
+            parameter_count=len(endpoint.parameters),
+        )
+        if not endpoint.risk_reasons:
+            score, reasons = score_endpoint_with_reasons(
+                endpoint.method,
+                endpoint.normalized_path,
+                endpoint.tags,
+                source=endpoint.source,
+            )
+            endpoint.risk_score = max(endpoint.risk_score, score)
+            endpoint.risk_reasons = reasons
         endpoint.evidence = _endpoint_evidence(endpoint)
     return sorted(seen.values(), key=lambda item: (item.risk_score, item.normalized_path), reverse=True)
 
@@ -525,7 +563,7 @@ def _findings_from_endpoints(target: str, endpoints: list) -> list:
                 endpoint=f"{endpoint.method} {endpoint.normalized_path}",
                 evidence=evidence,
                 manual_check=_manual_check_for_endpoint(endpoint),
-                confidence="medium",
+                confidence=endpoint.confidence,
             )
         )
     return findings
@@ -595,6 +633,8 @@ def _endpoint_evidence(endpoint: Endpoint) -> list:
         evidence.append(f"Endpoint found in {source}")
     if len(endpoint.source_urls) > 1:
         evidence.append(f"Corroborated by {len(endpoint.source_urls)} source URLs")
+    for reason in endpoint.risk_reasons[:4]:
+        evidence.append(f"Risk signal: {reason}")
     evidence.extend(_evidence_from_tags(endpoint.tags))
     return sorted(set(evidence))
 
@@ -612,6 +652,7 @@ def _extract_js(args: argparse.Namespace) -> int:
     for raw in extract_endpoints(text):
         normalized = normalize_path(raw.path)
         tags = classify_endpoint(raw.method, normalized)
+        score, reasons = score_endpoint_with_reasons(raw.method, normalized, tags, source="javascript")
         endpoint = Endpoint(
             source="javascript",
             source_url=args.source_url,
@@ -620,7 +661,10 @@ def _extract_js(args: argparse.Namespace) -> int:
             normalized_path=normalized,
             parameters=raw.parameters,
             tags=tags,
-            risk_score=score_endpoint(raw.method, normalized, tags, source="javascript"),
+            extraction_confidence=_normalize_extraction_confidence(raw.confidence),
+            risk_score=score,
+            risk_reasons=reasons,
+            confidence="low",
             sources=["javascript"],
             source_urls=[args.source_url],
             raw_paths=[raw.path],
@@ -910,6 +954,20 @@ def _safe_int(value: object) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _normalize_extraction_confidence(value: str) -> str:
+    lowered = (value or "").strip().lower()
+    if lowered in {"high", "medium", "low"}:
+        return lowered
+    return "medium"
+
+
+def _max_extraction_confidence(left: str, right: str) -> str:
+    rank = {"low": 1, "medium": 2, "high": 3}
+    normalized_left = _normalize_extraction_confidence(left)
+    normalized_right = _normalize_extraction_confidence(right)
+    return normalized_left if rank[normalized_left] >= rank[normalized_right] else normalized_right
 
 
 if __name__ == "__main__":

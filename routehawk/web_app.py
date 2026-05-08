@@ -302,6 +302,29 @@ class RouteHawkWebApp:
       background: #fbfcfe;
     }}
     .history-item p {{ margin: 4px 0; }}
+    .history-item .run-id {{
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      color: var(--muted);
+    }}
+    .history-stats {{
+      display: grid;
+      grid-template-columns: repeat(4, minmax(80px, 1fr));
+      gap: 6px;
+      margin-top: 6px;
+    }}
+    .history-stat {{
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      padding: 6px 8px;
+      font-size: 12px;
+    }}
+    .history-stat strong {{
+      display: block;
+      color: var(--ink);
+      font-size: 15px;
+    }}
     .history-links {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }}
     .history-links a {{
       text-decoration: none;
@@ -991,7 +1014,13 @@ def _history_panel(runs: list, latest_run_id: str = "") -> str:
             f"""
             <div class="history-item">
               <p><strong>{target}</strong></p>
-              <p class="hint">{generated} | endpoints {endpoints} | findings {findings} | high {high} | new {new} | removed {removed} | changed {changed} | source {source}</p>
+              <p class="run-id">run {run_id} | {generated} | source {source}</p>
+              <div class="history-stats">
+                <div class="history-stat"><span>endpoints</span><strong>{endpoints}</strong></div>
+                <div class="history-stat"><span>findings</span><strong>{findings}</strong></div>
+                <div class="history-stat"><span>high</span><strong>{high}</strong></div>
+                <div class="history-stat"><span>new/removed/changed</span><strong>{new}/{removed}/{changed}</strong></div>
+              </div>
               <div class="history-links">
                 <a href="{base_href}/report.html">HTML</a>
                 <a href="{base_href}/report.md">Markdown</a>

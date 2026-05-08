@@ -91,14 +91,17 @@ def render_markdown(result: ScanResult) -> str:
         for endpoint in sorted(result.endpoints, key=lambda item: item.risk_score, reverse=True):
             tags = ", ".join(endpoint.tags) if endpoint.tags else "none"
             sources = ", ".join(endpoint.sources or [endpoint.source])
+            reasons = endpoint.risk_reasons[:5]
             lines.extend(
                 [
                     f"### {endpoint.method} `{endpoint.normalized_path}`",
                     "",
                     f"- Risk score: {endpoint.risk_score}",
+                    f"- Extraction confidence: {endpoint.extraction_confidence}",
                     f"- Sources: {sources}",
                     f"- Tags: {tags}",
                     f"- Source URLs: {len(endpoint.source_urls or [endpoint.source_url])}",
+                    f"- Risk reasons: {', '.join(reasons) if reasons else 'none'}",
                     "",
                 ]
             )

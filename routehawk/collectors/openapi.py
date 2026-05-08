@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Dict, Iterable, List
 
-from routehawk.analyzers.idor_candidates import score_endpoint
+from routehawk.analyzers.idor_candidates import score_endpoint_with_reasons
 from routehawk.analyzers.route_classifier import classify_endpoint
 from routehawk.analyzers.route_normalizer import normalize_path
 from routehawk.core.models import Endpoint
@@ -29,6 +29,12 @@ def endpoints_from_openapi(spec: Dict[str, object], source_url: str) -> List[End
         for method in _methods(operations.keys()):
             normalized = normalize_path(path)
             tags = classify_endpoint(method.upper(), normalized)
+            risk_score, risk_reasons = score_endpoint_with_reasons(
+                method.upper(),
+                normalized,
+                tags,
+                source="openapi",
+            )
             endpoints.append(
                 Endpoint(
                     source="openapi",
@@ -37,7 +43,9 @@ def endpoints_from_openapi(spec: Dict[str, object], source_url: str) -> List[End
                     raw_path=path,
                     normalized_path=normalized,
                     tags=tags,
-                    risk_score=score_endpoint(method.upper(), normalized, tags, source="openapi"),
+                    extraction_confidence="high",
+                    risk_score=risk_score,
+                    risk_reasons=risk_reasons,
                 )
             )
     return endpoints

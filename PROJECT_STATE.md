@@ -1,6 +1,6 @@
 # RouteHawk Project State
 
-Last updated: 2026-05-08
+Last updated: 2026-05-09
 
 ## Project
 
@@ -107,6 +107,8 @@ Core:
 - structured data models
 - scope validator with exact and wildcard domain handling
 - scope-safe async HTTP client
+- polite request scheduling (max RPS per host + max concurrency)
+- bounded retries with exponential backoff and optional Retry-After support
 - out-of-scope redirect rejection
 
 Collectors:
@@ -125,11 +127,14 @@ Analyzers:
 - security header and CORS metadata summaries
 - route group clustering by normalized endpoint prefix
 - regex endpoint extraction
+- JavaScript endpoint extractor hardening against function-expression false positives
 - static asset and CDN-like false-positive suppression during endpoint extraction
 - config-driven suppression for custom suffix, path prefix, and regex noise rules
 - route normalization for ids, UUIDs, hashes, tokens, emails, colon params
 - route classification tags
 - risk scoring
+- risk score reason breakdown
+- endpoint confidence scoring
 - finding generation
 - finding-specific manual checklists
 
@@ -171,8 +176,14 @@ Dashboard:
 - risk-sorted diff preview with visible item counts
 - run compare form for any two historical runs
 - run compare detailed endpoint drilldown tables
+- readability-focused history cards (run id + compact KPI blocks)
 - persistent triage storage in `.routehawk\triage.json`
 - scan metadata persisted to `.routehawk\routehawk.sqlite`
+
+Automation:
+
+- GitHub Actions matrix CI (`.github/workflows/ci.yml`)
+- GitHub Actions local-lab smoke run (`.github/workflows/e2e-smoke.yml`)
 
 Demo lab:
 
@@ -193,7 +204,7 @@ Demo lab:
 Latest test command passed:
 
 ```text
-62 tests passed
+74 tests passed
 ```
 
 Latest compile check passed:

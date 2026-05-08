@@ -1,0 +1,41 @@
+name: E2E Smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 4 * * 1"
+
+jobs:
+  local-lab-scan:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+
+      - name: Start demo lab
+        run: |
+          python labs/demo_server.py > lab.log 2>&1 &
+          sleep 2
+
+      - name: Run scan and render reports
+        run: |
+          python -m routehawk scan --config config.local-lab.yaml --out smoke-results.json
+          python -m routehawk report --input smoke-results.json --out smoke-report.html
+          python -m routehawk report --input smoke-results.json --out smoke-report.md
+
+      - name: Validate outputs
+        run: |
+          test -f smoke-results.json
+          test -f smoke-report.html
+          test -f smoke-report.md

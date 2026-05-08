@@ -35,6 +35,9 @@ def load_config(path: str) -> RouteHawkConfig:
             max_concurrency=int(rules_data.get("max_concurrency", 20)),
             timeout_seconds=int(rules_data.get("timeout_seconds", 10)),
             user_agent=str(rules_data.get("user_agent", "RouteHawk/0.1")),
+            max_retries=int(rules_data.get("max_retries", 2)),
+            retry_backoff_seconds=float(rules_data.get("retry_backoff_seconds", 0.5)),
+            respect_retry_after=bool(rules_data.get("respect_retry_after", True)),
         ),
         scan=ScanOptions(
             passive_first=bool(scan_data.get("passive_first", True)),

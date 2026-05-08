@@ -177,7 +177,7 @@ class WebAppTests(unittest.TestCase):
 
             self.assertEqual(runs[0]["source"], "sqlite")
             self.assertIn("source sqlite", html)
-            self.assertIn("changed 3", html)
+            self.assertIn("2/1/3", html)
             self.assertIn("/db/runs/20260507-120000/report.html", html)
             self.assertIn("/db/runs/20260507-120000/report.md", html)
             self.assertIn("/db/runs/20260507-120000/results.json", html)

@@ -25,6 +25,10 @@
 - Dashboard compare details table for new/removed/changed endpoint drilldown.
 - CLI snapshot diff command: `routehawk compare --base ... --head ...`.
 - CLI history command: `routehawk history --workspace ...`.
+- Polite HTTP client controls with host rate limit, bounded retries, and optional Retry-After handling.
+- Endpoint confidence scoring and risk reason breakdown fields.
+- Endpoint inventory/report rendering for confidence and risk signals.
+- GitHub Actions workflows for matrix CI and local-lab smoke validation.
 
 ### Safety
 

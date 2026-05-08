@@ -18,6 +18,9 @@ class RulesConfig:
     max_concurrency: int = 20
     timeout_seconds: int = 10
     user_agent: str = "RouteHawk/0.1"
+    max_retries: int = 2
+    retry_backoff_seconds: float = 0.5
+    respect_retry_after: bool = True
 
 
 @dataclass(frozen=True)
@@ -71,7 +74,10 @@ class Endpoint:
     normalized_path: str
     parameters: List[str] = field(default_factory=list)
     tags: List[str] = field(default_factory=list)
+    extraction_confidence: str = "medium"
     risk_score: int = 0
+    risk_reasons: List[str] = field(default_factory=list)
+    confidence: str = "medium"
     sources: List[str] = field(default_factory=list)
     source_urls: List[str] = field(default_factory=list)
     raw_paths: List[str] = field(default_factory=list)

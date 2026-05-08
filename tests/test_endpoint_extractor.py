@@ -10,14 +10,56 @@ class EndpointExtractorTests(unittest.TestCase):
         fetch("/api/users/123/billing")
         const url = "https://api.example.com/v1/orders/1001";
         """
-        paths = unique_paths(extract_endpoints(text))
+        endpoints = extract_endpoints(text)
+        paths = unique_paths(endpoints)
         self.assertIn("/api/users/123/billing", paths)
         self.assertIn("/v1/orders/1001", paths)
+        order = [endpoint for endpoint in endpoints if endpoint.path == "/v1/orders/1001"]
+        self.assertTrue(order)
+        self.assertEqual(order[0].confidence, "medium")
 
     def test_extracts_method_prefixed_routes(self):
         endpoints = extract_endpoints("POST /api/admin/users/1/role")
         self.assertEqual(endpoints[0].method, "POST")
         self.assertEqual(endpoints[0].path, "/api/admin/users/1/role")
+        self.assertEqual(endpoints[0].confidence, "high")
+
+    def test_rejects_javascript_expression_false_positives(self):
+        text = """
+        "/{id}?e={value}&f.isInteger(c.pick)?c={value}"
+        "/{id}?.5*jQuery.easing.easeInBounce(a,2*b,0,d,e)"
+        "/foo(bar)"
+        "/api/users/1 + something"
+        """
+        paths = unique_paths(extract_endpoints(text))
+        self.assertNotIn("/{id}?e={value}&f.isInteger(c.pick)?c={value}", paths)
+        self.assertNotIn("/{id}?.5*jQuery.easing.easeInBounce(a,2*b,0,d,e)", paths)
+        self.assertNotIn("/foo(bar)", paths)
+        self.assertNotIn("/api/users/1 + something", paths)
+
+    def test_keeps_valid_api_paths_and_queries(self):
+        text = """
+        "/api/users/123/billing"
+        "/questions/123/abcdef"
+        "/api/users?id=123&tab=billing"
+        "/search?q=test"
+        "/graphql"
+        "/api/report.json"
+        "/swagger.json"
+        """
+        paths = unique_paths(extract_endpoints(text))
+        self.assertIn("/api/users/123/billing", paths)
+        self.assertIn("/questions/123/abcdef", paths)
+        self.assertIn("/api/users?id=123&tab=billing", paths)
+        self.assertIn("/search?q=test", paths)
+        self.assertIn("/graphql", paths)
+        self.assertIn("/api/report.json", paths)
+        self.assertIn("/swagger.json", paths)
+
+    def test_sets_medium_confidence_for_clean_non_method_paths(self):
+        endpoints = extract_endpoints('"/api/users/123/billing"')
+        self.assertEqual(len(endpoints), 1)
+        self.assertEqual(endpoints[0].confidence, "medium")
 
     def test_ignores_html_closing_tags(self):
         paths = unique_paths(extract_endpoints("<html><body></body></html>"))
