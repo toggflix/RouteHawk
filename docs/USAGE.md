@@ -42,6 +42,7 @@ http://127.0.0.1:8090/diff/latest.json
 ```
 
 Historical runs include their own `diff.json` link in the scan history panel.
+The compare panel also supports selecting any two runs and rendering a detailed endpoint-level drilldown.
 
 Finding review buttons in dashboard-generated reports are persisted locally in:
 
@@ -96,6 +97,24 @@ Optional auth behavior probes are disabled by default. Enable them only for auth
 scan:
   check_auth_behavior: true
   auth_probe_limit: 20
+```
+
+Polite client retry/rate settings:
+
+```yaml
+rules:
+  max_rps_per_host: 2
+  max_concurrency: 20
+  max_retries: 2
+  retry_backoff_seconds: 0.5
+  respect_retry_after: true
+```
+
+Compare and history commands:
+
+```powershell
+py -m routehawk compare --base previous-results.json --head current-results.json --out diff.md
+py -m routehawk history --workspace . --limit 10
 ```
 
 ## Tests

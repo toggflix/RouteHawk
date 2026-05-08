@@ -169,6 +169,11 @@ def render_html(result: ScanResult, triage_load_url: str = "", triage_update_url
       vertical-align: top;
       font-size: 14px;
     }}
+    th {{
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }}
     th {{ background: #edf1f6; color: #344054; }}
     tr:last-child td {{ border-bottom: 0; }}
     .pill {{
@@ -290,8 +295,10 @@ def render_html(result: ScanResult, triage_load_url: str = "", triage_update_url
             <th>Method</th>
             <th>Route</th>
             <th>Risk</th>
+            <th>Confidence</th>
             <th>Sources</th>
             <th>Tags</th>
+            <th>Risk Signals</th>
           </tr>
         </thead>
         <tbody>{endpoints}</tbody>
@@ -597,7 +604,7 @@ def _metadata_rows(result: ScanResult) -> str:
 
 def _endpoint_rows(result: ScanResult) -> str:
     if not result.endpoints:
-        return '<tr><td colspan="5" class="empty">No endpoints recorded yet.</td></tr>'
+        return '<tr><td colspan="7" class="empty">No endpoints recorded yet.</td></tr>'
     return "".join(_endpoint_row(endpoint) for endpoint in result.endpoints)
 
 
@@ -628,8 +635,14 @@ def _endpoint_row(endpoint: Endpoint) -> str:
     sources = endpoint.sources or [endpoint.source]
     source_urls = endpoint.source_urls or [endpoint.source_url]
     tags = endpoint.tags or []
+    reasons = endpoint.risk_reasons[:4]
     source_title = "\n".join(source_urls)
     tag_html = _pills(tags) if tags else '<span class="empty">none</span>'
+    reason_html = (
+        "<ul>" + "".join(f"<li>{escape(reason)}</li>" for reason in reasons) + "</ul>"
+        if reasons
+        else '<span class="empty">none</span>'
+    )
     source_data = escape(" ".join(sources), quote=True)
     search_data = escape(
         " ".join(
@@ -648,8 +661,10 @@ def _endpoint_row(endpoint: Endpoint) -> str:
         f"<td>{escape(endpoint.method)}</td>"
         f"<td><code>{escape(endpoint.normalized_path)}</code><br><span class=\"meta\">Raw variants: {len(endpoint.raw_paths or [endpoint.raw_path])}</span></td>"
         f'<td><span class="score {severity}">{endpoint.risk_score}</span><br><span class="meta">{escape(severity)}</span></td>'
+        f"<td>{escape(endpoint.confidence)}</td>"
         f'<td title="{escape(source_title)}">{_pills(sources)}</td>'
         f"<td>{tag_html}</td>"
+        f"<td>{reason_html}</td>"
         "</tr>"
     )
 

@@ -41,9 +41,11 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(len(merged), 1)
         self.assertEqual(merged[0].risk_score, 85)
         self.assertEqual(merged[0].sources, ["javascript", "openapi"])
+        self.assertEqual(merged[0].confidence, "high")
         self.assertIn("Corroborated by 2 source URLs", merged[0].evidence)
         self.assertIn("Endpoint found in javascript", merged[0].evidence)
         self.assertIn("Endpoint found in openapi", merged[0].evidence)
+        self.assertTrue(any(item.startswith("Risk signal:") for item in merged[0].evidence))
 
     def test_summary_counts_sources_tags_and_risk(self):
         endpoint = Endpoint(
@@ -101,6 +103,9 @@ class ReportTests(unittest.TestCase):
         self.assertIn("/api/users/{id}/billing", html)
         self.assertIn("filter-search", html)
         self.assertIn("filter-status", html)
+        self.assertIn("Endpoint confidence:", markdown)
+        self.assertIn("Risk reasons:", markdown)
+        self.assertIn("Risk Signals", html)
         self.assertIn("data-copy-checklist", html)
         self.assertIn("data-copy-draft", html)
         self.assertIn("Copy finding draft", html)

@@ -20,6 +20,10 @@ scope:
 scan:
   check_auth_behavior: true
   auth_probe_limit: 7
+rules:
+  max_retries: 4
+  retry_backoff_seconds: 0.75
+  respect_retry_after: false
 suppression:
   ignore_suffixes:
     - .bak
@@ -38,6 +42,9 @@ suppression:
             self.assertEqual(config.suppression.ignore_regexes, ["/api/internal/cache/\\d+"])
             self.assertTrue(config.scan.check_auth_behavior)
             self.assertEqual(config.scan.auth_probe_limit, 7)
+            self.assertEqual(config.rules.max_retries, 4)
+            self.assertAlmostEqual(config.rules.retry_backoff_seconds, 0.75)
+            self.assertFalse(config.rules.respect_retry_after)
 
 
 if __name__ == "__main__":

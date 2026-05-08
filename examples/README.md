@@ -6,6 +6,12 @@ These files are generated from the safe local demo lab:
 - `demo-report.md` - Markdown report
 - `demo-report.html` - interactive HTML report
 
+Current demo outputs include:
+
+- endpoint confidence values (`low`/`medium`/`high`)
+- risk score reason breakdowns per endpoint
+- compare-ready endpoint inventory fields for diff workflows
+
 Regenerate them with:
 
 ```powershell

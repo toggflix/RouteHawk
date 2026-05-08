@@ -26,6 +26,10 @@
 - Importers: httpx, subfinder, nuclei, nmap
 - CLI result comparison (`routehawk compare`)
 - CLI run history (`routehawk history`)
+- Endpoint confidence classification
+- Risk reason breakdowns
+- Polite HTTP client retry/backoff controls
+- GitHub Actions CI and smoke workflows
 - Security headers and CORS summaries
 - Optional auth behavior analyzer
 - Demo report artifacts under `examples/`

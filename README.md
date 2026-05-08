@@ -15,10 +15,13 @@ This repository contains a working v0.1 local product:
 - Endpoint normalization, classification, risk scoring, and manual review checklist generation
 - Interactive HTML, Markdown, and JSON reports
 - Dashboard scan history, diff view, and persistent triage
+- Dashboard run-to-run compare with endpoint drilldown tables
 - SQLite-backed run storage and historical report regeneration
 - Import parsers for httpx, subfinder, nuclei, and nmap outputs
 - Route group summaries for quickly spotting high-risk API families
+- Endpoint confidence scoring and risk signal breakdowns
 - Safe demo lab with Python and Docker Compose options
+- GitHub Actions CI + E2E smoke workflows
 
 ## Quick start
 
@@ -147,9 +150,29 @@ Current reports also include:
 - Metadata records from robots.txt, sitemap.xml, security.txt, OpenAPI, and GraphQL probes
 - Security header and CORS summaries
 - Route group summaries by normalized path prefix
+- Endpoint confidence levels (high/medium/low)
+- Risk score reason breakdown per endpoint
 - Finding-specific manual checklists for IDOR, admin/authz, internal/debug, and GraphQL candidates
 
 Optional auth behavior probes can be enabled in config. They use limited HEAD requests and are disabled by default.
+
+Polite HTTP client controls can also be configured:
+
+```yaml
+rules:
+  max_rps_per_host: 2
+  max_concurrency: 20
+  max_retries: 2
+  retry_backoff_seconds: 0.5
+  respect_retry_after: true
+```
+
+## CI
+
+GitHub Actions workflows included:
+
+- `.github/workflows/ci.yml`: matrix unit tests, compile check, CLI smoke.
+- `.github/workflows/e2e-smoke.yml`: local demo lab scan + report render smoke run.
 
 ## Project memory
 
