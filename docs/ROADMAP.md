@@ -25,6 +25,7 @@
 - SQLite-backed HTML/Markdown report regeneration
 - Importers: httpx, subfinder, nuclei, nmap
 - CLI result comparison (`routehawk compare`)
+- CLI run history (`routehawk history`)
 - Security headers and CORS summaries
 - Optional auth behavior analyzer
 - Demo report artifacts under `examples/`

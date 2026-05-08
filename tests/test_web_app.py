@@ -209,7 +209,22 @@ class WebAppTests(unittest.TestCase):
         compare = {
             "base": "20260507-120001",
             "head": "20260507-120002",
-            "diff": {"new_count": 0, "removed_count": 0, "changed_count": 0, "unchanged_count": 0, "new": [], "removed": [], "changed": []},
+            "diff": {
+                "new_count": 1,
+                "removed_count": 0,
+                "changed_count": 0,
+                "unchanged_count": 0,
+                "new": [
+                    {
+                        "endpoint": "GET /api/billing/{id}",
+                        "risk_score": 90,
+                        "sources": ["openapi"],
+                        "tags": ["billing", "object-reference"],
+                    }
+                ],
+                "removed": [],
+                "changed": [],
+            },
             "error": "",
         }
 
@@ -219,6 +234,9 @@ class WebAppTests(unittest.TestCase):
         self.assertIn('name="base"', html)
         self.assertIn('name="head"', html)
         self.assertIn("New endpoints", html)
+        self.assertIn("Detailed compare", html)
+        self.assertIn("/api/billing/{id}", html)
+        self.assertIn("risk-badge", html)
 
     def test_compare_context_builds_diff_for_known_runs(self):
         with TemporaryDirectory() as temporary:

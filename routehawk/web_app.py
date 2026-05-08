@@ -349,6 +349,46 @@ class RouteHawkWebApp:
       color: #fff;
       font-weight: 700;
     }}
+    .compare-details {{
+      margin-top: 14px;
+      display: grid;
+      gap: 12px;
+    }}
+    .compare-section {{
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 12px;
+    }}
+    .compare-section h3 {{ margin: 0 0 8px; font-size: 15px; }}
+    .compare-table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }}
+    .compare-table th, .compare-table td {{
+      border-top: 1px solid var(--line);
+      padding: 8px 6px;
+      text-align: left;
+      vertical-align: top;
+    }}
+    .compare-table th {{
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      border-top: 0;
+    }}
+    .risk-badge {{
+      display: inline-block;
+      min-width: 32px;
+      text-align: center;
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: #eef2f7;
+      border: 1px solid var(--line);
+      font-size: 12px;
+      font-weight: 700;
+    }}
     .diff-item {{
       border-top: 1px solid var(--line);
       padding-top: 8px;
@@ -910,7 +950,9 @@ def _compare_panel(runs: list, compare: Dict[str, object]) -> str:
     diff_block = (
         f'<div class="notice error"><strong>Compare failed</strong><span>{escape(error)}</span></div>'
         if error
-        else _diff_panel(diff) if isinstance(diff, dict) else '<p class="hint">Select two runs and compare.</p>'
+        else _diff_panel(diff) + _compare_diff_details(diff)
+        if isinstance(diff, dict)
+        else '<p class="hint">Select two runs and compare.</p>'
     )
     return (
         '<form class="compare-form" method="get" action="/">'
@@ -993,3 +1035,80 @@ def _compare_link(href: str) -> str:
         return ""
     safe_href = escape(href, quote=True)
     return f'<a href="{safe_href}">Compare vs Latest</a>'
+
+
+def _compare_diff_details(diff: Dict[str, object]) -> str:
+    if not diff:
+        return ""
+    new_items = _dict_list(diff.get("new", []))
+    removed_items = _dict_list(diff.get("removed", []))
+    changed_items = _dict_list(diff.get("changed", []))
+    return (
+        '<div class="compare-details">'
+        "<h3>Detailed compare</h3>"
+        + _compare_endpoint_table("New endpoints", new_items, "No new endpoints.")
+        + _compare_endpoint_table("Removed endpoints", removed_items, "No removed endpoints.")
+        + _compare_changed_table(changed_items)
+        + "</div>"
+    )
+
+
+def _compare_endpoint_table(title: str, items: list, empty: str) -> str:
+    if not items:
+        return f'<div class="compare-section"><h3>{escape(title)}</h3><p class="hint">{escape(empty)}</p></div>'
+    rows = []
+    for item in sorted(items, key=lambda row: _safe_int(row.get("risk_score")), reverse=True):
+        endpoint = escape(str(item.get("endpoint", "")))
+        risk = _risk_badge(_safe_int(item.get("risk_score")))
+        tags = _diff_tags(item)
+        sources = _diff_sources(item)
+        rows.append(
+            "<tr>"
+            f"<td><code>{endpoint}</code></td>"
+            f"<td>{risk}</td>"
+            f"<td>{sources}</td>"
+            f"<td>{tags}</td>"
+            "</tr>"
+        )
+    return (
+        f'<div class="compare-section"><h3>{escape(title)}</h3>'
+        '<table class="compare-table"><thead><tr>'
+        "<th>Endpoint</th><th>Risk</th><th>Sources</th><th>Tags</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div>"
+    )
+
+
+def _compare_changed_table(items: list) -> str:
+    if not items:
+        return '<div class="compare-section"><h3>Changed risk</h3><p class="hint">No changed risk scores.</p></div>'
+    rows = []
+    for item in sorted(items, key=lambda row: _safe_int(row.get("current_risk_score")), reverse=True):
+        endpoint = escape(str(item.get("endpoint", "")))
+        previous = _risk_badge(_safe_int(item.get("previous_risk_score")))
+        current = _risk_badge(_safe_int(item.get("current_risk_score")))
+        current_data = item.get("current", {})
+        data = current_data if isinstance(current_data, dict) else {}
+        sources = _diff_sources(data)
+        tags = _diff_tags(data)
+        rows.append(
+            "<tr>"
+            f"<td><code>{endpoint}</code></td>"
+            f"<td>{previous} -> {current}</td>"
+            f"<td>{sources}</td>"
+            f"<td>{tags}</td>"
+            "</tr>"
+        )
+    return (
+        '<div class="compare-section"><h3>Changed risk</h3>'
+        '<table class="compare-table"><thead><tr>'
+        "<th>Endpoint</th><th>Risk (previous -> current)</th><th>Sources</th><th>Tags</th>"
+        "</tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div>"
+    )
+
+
+def _risk_badge(score: int) -> str:
+    return f'<span class="risk-badge">{escape(str(score))}</span>'

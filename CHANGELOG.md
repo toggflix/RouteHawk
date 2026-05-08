@@ -22,7 +22,9 @@
 - Dashboard scan success/error banners.
 - Risk-sorted dashboard diff previews with visible item limits.
 - Dashboard run-compare panel for selecting any two historical scans.
+- Dashboard compare details table for new/removed/changed endpoint drilldown.
 - CLI snapshot diff command: `routehawk compare --base ... --head ...`.
+- CLI history command: `routehawk history --workspace ...`.
 
 ### Safety
 

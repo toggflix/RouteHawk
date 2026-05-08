@@ -82,6 +82,12 @@ py -m routehawk compare --base previous-results.json --head current-results.json
 py -m routehawk compare --base previous-results.json --head current-results.json --out diff.md
 ```
 
+Show local scan history:
+
+```powershell
+py -m routehawk history --workspace . --limit 10
+```
+
 ## Current Features
 
 CLI:
@@ -91,6 +97,7 @@ CLI:
 - `routehawk report`
 - `routehawk import-file`
 - `routehawk compare`
+- `routehawk history`
 - `routehawk serve`
 
 Core:
@@ -163,6 +170,7 @@ Dashboard:
 - dashboard diff panel for new, removed, and changed endpoint summaries
 - risk-sorted diff preview with visible item counts
 - run compare form for any two historical runs
+- run compare detailed endpoint drilldown tables
 - persistent triage storage in `.routehawk\triage.json`
 - scan metadata persisted to `.routehawk\routehawk.sqlite`
 

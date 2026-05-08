@@ -51,6 +51,7 @@ from routehawk.importers.nuclei_json import import_nuclei_json
 from routehawk.importers.subfinder_json import import_subfinder_json
 from routehawk.reports.html import render_html
 from routehawk.reports.markdown import render_markdown
+from routehawk.storage.sqlite import list_scan_records
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -92,6 +93,11 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--head", required=True, help="Head (newer) RouteHawk result JSON path.")
     compare.add_argument("--out", help="Optional output path. Supports .json and .md.")
 
+    history = subparsers.add_parser("history", help="Show recent RouteHawk scan history.")
+    history.add_argument("--workspace", default=".", help="Workspace path containing .routehawk.")
+    history.add_argument("--limit", type=int, default=10, help="Maximum number of history rows.")
+    history.add_argument("--out", help="Optional JSON output path.")
+
     serve = subparsers.add_parser("serve", help="Run the local RouteHawk dashboard.")
     serve.add_argument("--host", default="127.0.0.1", help="Dashboard bind host.")
     serve.add_argument("--port", type=int, default=8090, help="Dashboard port.")
@@ -114,6 +120,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         return _import_file(args)
     if args.command == "compare":
         return _compare(args)
+    if args.command == "history":
+        return _history(args)
     if args.command == "serve":
         return _serve(args)
 
@@ -702,6 +710,110 @@ def _compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def _history(args: argparse.Namespace) -> int:
+    workspace = Path(args.workspace).resolve()
+    limit = max(1, int(args.limit))
+    records = _history_records(workspace, limit)
+    output = {"workspace": str(workspace), "count": len(records), "runs": records}
+    if args.out:
+        Path(args.out).write_text(json.dumps(output, indent=2), encoding="utf-8")
+    else:
+        print(_render_history_text(output))
+    return 0
+
+
+def _history_records(workspace: Path, limit: int) -> list:
+    routehawk_dir = workspace / ".routehawk"
+    database_path = routehawk_dir / "routehawk.sqlite"
+    sqlite_records = list_scan_records(database_path, limit=limit)
+    if sqlite_records:
+        return [
+            {
+                "source": "sqlite",
+                "run_id": item.run_id,
+                "generated_at": item.generated_at,
+                "target": item.target,
+                "scope": item.scope,
+                "endpoints": item.endpoint_count,
+                "findings": item.finding_count,
+                "high_risk": item.high_risk_count,
+                "new_endpoints": item.new_endpoint_count,
+                "removed_endpoints": item.removed_endpoint_count,
+                "changed_endpoints": item.changed_endpoint_count,
+            }
+            for item in sqlite_records
+        ]
+    runs_root = routehawk_dir / "runs"
+    if not runs_root.exists():
+        return []
+    records = []
+    for run_dir in sorted(runs_root.iterdir(), reverse=True):
+        if not run_dir.is_dir() or run_dir.name == "latest":
+            continue
+        summary_path = run_dir / "summary.json"
+        if not summary_path.exists():
+            continue
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(summary, dict):
+            continue
+        records.append(
+            {
+                "source": "files",
+                "run_id": str(summary.get("run_id", run_dir.name)),
+                "generated_at": str(summary.get("generated_at", "")),
+                "target": str(summary.get("target", "")),
+                "scope": summary.get("scope", []) if isinstance(summary.get("scope"), list) else [],
+                "endpoints": _safe_int(summary.get("endpoints")),
+                "findings": _safe_int(summary.get("findings")),
+                "high_risk": _safe_int(summary.get("high_risk")),
+                "new_endpoints": _safe_int(summary.get("new_endpoints")),
+                "removed_endpoints": _safe_int(summary.get("removed_endpoints")),
+                "changed_endpoints": _safe_int(summary.get("changed_endpoints")),
+            }
+        )
+        if len(records) >= limit:
+            break
+    return records
+
+
+def _render_history_text(payload: dict) -> str:
+    runs = payload.get("runs", [])
+    if not isinstance(runs, list):
+        runs = []
+    lines = [
+        "RouteHawk History",
+        f"Workspace: {payload.get('workspace', '')}",
+        f"Runs: {len(runs)}",
+        "",
+    ]
+    if not runs:
+        lines.append("No runs found.")
+        return "\n".join(lines)
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        lines.append(
+            " | ".join(
+                [
+                    str(run.get("run_id", "")),
+                    str(run.get("generated_at", "")),
+                    str(run.get("target", "")),
+                    f"endpoints {run.get('endpoints', 0)}",
+                    f"findings {run.get('findings', 0)}",
+                    f"high {run.get('high_risk', 0)}",
+                    f"+{run.get('new_endpoints', 0)}",
+                    f"-{run.get('removed_endpoints', 0)}",
+                    f"~{run.get('changed_endpoints', 0)}",
+                    f"source {run.get('source', 'unknown')}",
+                ]
+            )
+        )
+    return "\n".join(lines)
+
+
 def _load_result_payload(path: Path) -> dict:
     if not path.exists():
         raise SystemExit(f"File not found: {path}")
@@ -791,6 +903,13 @@ def _result_to_json(result: ScanResult) -> dict:
         "findings": [finding.to_dict() for finding in result.findings],
         "warnings": result.warnings,
     }
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 if __name__ == "__main__":

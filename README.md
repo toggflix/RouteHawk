@@ -132,6 +132,13 @@ py -m routehawk compare --base previous-results.json --head current-results.json
 py -m routehawk compare --base previous-results.json --head current-results.json --out diff.md
 ```
 
+Show recent local scan history:
+
+```powershell
+py -m routehawk history --workspace . --limit 10
+py -m routehawk history --workspace . --limit 10 --out history.json
+```
+
 RouteHawk merges duplicate normalized routes across sources. For example, a billing endpoint found in JavaScript, sitemap.xml, and OpenAPI is reported once with combined evidence and source coverage.
 
 Current reports also include:
