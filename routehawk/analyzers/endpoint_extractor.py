@@ -19,6 +19,8 @@ PATH_RE = re.compile(
 
 METHOD_PREFIX_RE = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\s+(/[^\s'\"`]+)", re.I)
 PARAM_RE = re.compile(r"[:{]([A-Za-z_][A-Za-z0-9_]*)}?")
+JS_FUNCTION_CALL_RE = re.compile(r"[A-Za-z_$][A-Za-z0-9_$]*\s*\(")
+JS_OPERATOR_NOISE = (" + ", " * ", "=>", "&&", "||")
 IGNORED_FILE_SUFFIXES = (
     ".png",
     ".jpg",
@@ -56,6 +58,7 @@ class ExtractedEndpoint:
     path: str
     method: str = "GET"
     parameters: List[str] = field(default_factory=list)
+    confidence: str = "low"
 
 
 def extract_endpoints(text: str, suppression: Optional[SuppressionConfig] = None) -> List[ExtractedEndpoint]:
@@ -71,13 +74,15 @@ def extract_endpoints(text: str, suppression: Optional[SuppressionConfig] = None
                     path=cleaned,
                     method=method.upper(),
                     parameters=_extract_parameters(cleaned),
+                    confidence="high",
                 )
             )
 
     for match in PATH_RE.finditer(text):
         if match.start() > 0 and text[match.start() - 1] == "<":
             continue
-        cleaned = _clean_path(match.group("path"))
+        raw = match.group("path")
+        cleaned = _clean_path(raw)
         if _looks_useful(cleaned, suppression) and cleaned not in seen:
             seen.add(cleaned)
             results.append(
@@ -85,6 +90,7 @@ def extract_endpoints(text: str, suppression: Optional[SuppressionConfig] = None
                     path=cleaned,
                     method="GET",
                     parameters=_extract_parameters(cleaned),
+                    confidence=_path_confidence(cleaned, from_absolute=raw.startswith(("http://", "https://"))),
                 )
             )
 
@@ -111,6 +117,8 @@ def _looks_useful(path: str, suppression: Optional[SuppressionConfig] = None) ->
         return False
     lowered = path.lower()
     path_only = lowered.split("?", 1)[0].split("#", 1)[0]
+    if _looks_like_js_expression_noise(path, lowered):
+        return False
     suffixes = IGNORED_FILE_SUFFIXES + tuple(_normalize_suffixes(suppression))
     prefixes = IGNORED_PATH_PREFIXES + tuple(_normalize_prefixes(suppression))
     if any(path_only.endswith(suffix) for suffix in suffixes):
@@ -124,6 +132,24 @@ def _looks_useful(path: str, suppression: Optional[SuppressionConfig] = None) ->
 
 def _extract_parameters(path: str) -> List[str]:
     return sorted(set(PARAM_RE.findall(path)))
+
+
+def _path_confidence(path: str, from_absolute: bool) -> str:
+    if from_absolute:
+        return "medium"
+    lowered = path.lower()
+    if "?" in path:
+        return "medium"
+    if lowered == "/graphql":
+        return "medium"
+    if lowered.endswith(".json"):
+        return "medium"
+    if lowered.startswith("/api/"):
+        return "medium"
+    segments = [segment for segment in path.split("/") if segment]
+    if len(segments) >= 3:
+        return "medium"
+    return "low"
 
 
 def unique_paths(endpoints: Iterable[ExtractedEndpoint]) -> List[str]:
@@ -153,4 +179,22 @@ def _matches_ignored_regex(path: str, suppression: Optional[SuppressionConfig]) 
                 return True
         except re.error:
             continue
+    return False
+
+
+def _looks_like_js_expression_noise(path: str, lowered: str) -> bool:
+    if " " in path:
+        return True
+    if path.count("?") > 1:
+        return True
+    if "(" in path or ")" in path:
+        return True
+    if "jquery." in lowered:
+        return True
+    if ".isinteger(" in lowered:
+        return True
+    if any(token in path for token in JS_OPERATOR_NOISE):
+        return True
+    if JS_FUNCTION_CALL_RE.search(path):
+        return True
     return False
