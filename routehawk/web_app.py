@@ -853,8 +853,10 @@ def _diff_panel(diff: Dict[str, object]) -> str:
         f'<p class="hint">New {new_count} | removed {removed_count} | changed {changed_count} | '
         f'unchanged {unchanged_count}</p>'
     )
+    warning = _diff_guard_warning(diff)
     return (
-        summary
+        warning
+        + summary
         + '<div class="diff-grid">'
         + _diff_column("New endpoints", diff.get("new", []), "No new endpoints.")
         + _diff_column("Removed endpoints", diff.get("removed", []), "No removed endpoints.")
@@ -964,6 +966,18 @@ def _dict_list(value: object) -> list:
 def _diff_count_line(visible: int, total: int) -> str:
     suffix = f"Showing {visible} of {total}" if visible < total else f"Showing {visible}"
     return f'<p class="diff-meta">{escape(suffix)}</p>'
+
+
+def _diff_guard_warning(diff: Dict[str, object]) -> str:
+    warning = str(diff.get("warning", "")).strip()
+    if not warning:
+        return ""
+    return (
+        '<div class="notice error">'
+        "<strong>Diff context warning</strong>"
+        f"<span>{escape(warning)}</span>"
+        "</div>"
+    )
 
 
 def _safe_int(value: object) -> int:

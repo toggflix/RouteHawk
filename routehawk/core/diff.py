@@ -23,6 +23,15 @@ def build_endpoint_diff(previous: Dict[str, object], current: Dict[str, object])
         changed_entry = _endpoint_change_summary(key, previous_map[key], current_map[key])
         if changed_entry is not None:
             changed_entries.append(changed_entry)
+    previous_target = _target_value(previous)
+    current_target = _target_value(current)
+    previous_scope = _scope_values(previous)
+    current_scope = _scope_values(current)
+    target_changed = bool(previous_target and current_target and previous_target != current_target)
+    scope_changed = bool(previous_scope and current_scope and previous_scope != current_scope)
+    warning = ""
+    if target_changed or scope_changed:
+        warning = "Latest diff compares different targets or scopes; counts may not represent real endpoint drift."
 
     return {
         "new_count": len(new_keys),
@@ -32,6 +41,13 @@ def build_endpoint_diff(previous: Dict[str, object], current: Dict[str, object])
         "new": [_endpoint_summary(current_map[key]) for key in new_keys],
         "removed": [_endpoint_summary(previous_map[key]) for key in removed_keys],
         "changed": changed_entries,
+        "previous_target": previous_target,
+        "current_target": current_target,
+        "previous_scope": previous_scope,
+        "current_scope": current_scope,
+        "target_changed": target_changed,
+        "scope_changed": scope_changed,
+        "warning": warning,
     }
 
 
@@ -161,3 +177,15 @@ def _list_values(value: object) -> List[object]:
 
 def _string_list(values: Iterable[object]) -> List[str]:
     return sorted({str(value) for value in values if value is not None})
+
+
+def _target_value(payload: Dict[str, object]) -> str:
+    value = payload.get("target")
+    return str(value).strip() if value is not None else ""
+
+
+def _scope_values(payload: Dict[str, object]) -> List[str]:
+    raw = payload.get("scope")
+    if not isinstance(raw, list):
+        return []
+    return _string_list(raw)

@@ -154,6 +154,67 @@ class EndpointDiffTests(unittest.TestCase):
         self.assertEqual(diff["unchanged_count"], 1)
         self.assertEqual(diff["changed"], [])
 
+    def test_diff_marks_target_and_scope_unchanged_for_same_context(self):
+        previous = {
+            "target": "https://app.example.com",
+            "scope": ["example.com", "*.example.com"],
+            "endpoints": [{"method": "GET", "normalized_path": "/api/a"}],
+        }
+        current = {
+            "target": "https://app.example.com",
+            "scope": ["*.example.com", "example.com"],
+            "endpoints": [{"method": "GET", "normalized_path": "/api/a"}],
+        }
+
+        diff = build_endpoint_diff(previous, current)
+
+        self.assertFalse(diff["target_changed"])
+        self.assertFalse(diff["scope_changed"])
+        self.assertEqual(diff["warning"], "")
+        self.assertIn("new_count", diff)
+        self.assertIn("removed_count", diff)
+        self.assertIn("changed_count", diff)
+        self.assertIn("unchanged_count", diff)
+        self.assertIn("new", diff)
+        self.assertIn("removed", diff)
+        self.assertIn("changed", diff)
+
+    def test_diff_warns_when_target_changes(self):
+        previous = {
+            "target": "https://app-a.example.com",
+            "scope": ["example.com"],
+            "endpoints": [{"method": "GET", "normalized_path": "/api/a"}],
+        }
+        current = {
+            "target": "https://app-b.example.com",
+            "scope": ["example.com"],
+            "endpoints": [{"method": "GET", "normalized_path": "/api/a"}],
+        }
+
+        diff = build_endpoint_diff(previous, current)
+
+        self.assertTrue(diff["target_changed"])
+        self.assertFalse(diff["scope_changed"])
+        self.assertIn("different targets or scopes", diff["warning"])
+
+    def test_diff_warns_when_scope_changes(self):
+        previous = {
+            "target": "https://app.example.com",
+            "scope": ["example.com"],
+            "endpoints": [{"method": "GET", "normalized_path": "/api/a"}],
+        }
+        current = {
+            "target": "https://app.example.com",
+            "scope": ["example.com", "*.example.com"],
+            "endpoints": [{"method": "GET", "normalized_path": "/api/a"}],
+        }
+
+        diff = build_endpoint_diff(previous, current)
+
+        self.assertFalse(diff["target_changed"])
+        self.assertTrue(diff["scope_changed"])
+        self.assertIn("different targets or scopes", diff["warning"])
+
 
 if __name__ == "__main__":
     unittest.main()

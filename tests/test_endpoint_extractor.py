@@ -56,6 +56,58 @@ class EndpointExtractorTests(unittest.TestCase):
         self.assertIn("/api/report.json", paths)
         self.assertIn("/swagger.json", paths)
 
+    def test_rejects_third_party_documentation_and_telemetry_noise(self):
+        text = """
+        "/TR/{id}/REC-css3-selectors-20110929/"
+        "/TR/{id}/WD-DOM-Level-3-Events-20030331/ecma-script-binding.html"
+        "/Microsoft/TypeScript/issues/{id}"
+        "/twbs/bootstrap"
+        "/krzysu/flot.tooltip"
+        "/Studio-42/elFinder/pull/{id}"
+        "/Consortium/Legal/{id}/copyright-software-and-document"
+        "/youtubei/v1/live_chat/{token}"
+        "/get/videoqualityreport/?v={value}"
+        "/XML/{id}/namespace"
+        """
+
+        paths = unique_paths(extract_endpoints(text))
+
+        self.assertNotIn("/TR/{id}/REC-css3-selectors-20110929/", paths)
+        self.assertNotIn("/TR/{id}/WD-DOM-Level-3-Events-20030331/ecma-script-binding.html", paths)
+        self.assertNotIn("/Microsoft/TypeScript/issues/{id}", paths)
+        self.assertNotIn("/twbs/bootstrap", paths)
+        self.assertNotIn("/krzysu/flot.tooltip", paths)
+        self.assertNotIn("/Studio-42/elFinder/pull/{id}", paths)
+        self.assertNotIn("/Consortium/Legal/{id}/copyright-software-and-document", paths)
+        self.assertNotIn("/youtubei/v1/live_chat/{token}", paths)
+        self.assertNotIn("/get/videoqualityreport/?v={value}", paths)
+        self.assertNotIn("/XML/{id}/namespace", paths)
+
+    def test_keeps_application_routes_while_noise_suppression_is_enabled(self):
+        text = """
+        "/api/users/{id}/billing"
+        "/api/orders/{id}"
+        "/questions/{id}/{token}"
+        "/graphql"
+        "/openapi.json"
+        "/swagger.json"
+        "/payment/{id}"
+        "/auth/callback"
+        "/blog/{id}/{token}"
+        """
+
+        paths = unique_paths(extract_endpoints(text))
+
+        self.assertIn("/api/users/{id}/billing", paths)
+        self.assertIn("/api/orders/{id}", paths)
+        self.assertIn("/questions/{id}/{token}", paths)
+        self.assertIn("/graphql", paths)
+        self.assertIn("/openapi.json", paths)
+        self.assertIn("/swagger.json", paths)
+        self.assertIn("/payment/{id}", paths)
+        self.assertIn("/auth/callback", paths)
+        self.assertIn("/blog/{id}/{token}", paths)
+
     def test_sets_medium_confidence_for_clean_non_method_paths(self):
         endpoints = extract_endpoints('"/api/users/123/billing"')
         self.assertEqual(len(endpoints), 1)

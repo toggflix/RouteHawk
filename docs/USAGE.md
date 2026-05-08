@@ -100,6 +100,7 @@ suppression:
 ```
 
 Built-in suppression already removes common static assets such as images, fonts, CSS, JavaScript maps, and CDN-style `//host/path` strings.
+JavaScript extraction also applies conservative suppression for third-party library/documentation noise and vendor telemetry-like paths.
 
 ## CLI
 
@@ -143,6 +144,8 @@ Compare and history commands:
 py -m routehawk compare --base previous-results.json --head current-results.json --out diff.md
 py -m routehawk history --workspace . --limit 10
 ```
+
+Latest diff output is most meaningful when comparing scans from the same target and scope.
 
 ## Safety Notes
 

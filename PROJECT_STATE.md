@@ -129,6 +129,7 @@ Analyzers:
 - regex endpoint extraction
 - JavaScript endpoint extractor hardening against function-expression false positives
 - static asset and CDN-like false-positive suppression during endpoint extraction
+- conservative suppression for third-party documentation/library and vendor telemetry-like JavaScript path noise
 - config-driven suppression for custom suffix, path prefix, and regex noise rules
 - route normalization for ids, UUIDs, hashes, tokens, emails, colon params
 - route classification tags
@@ -173,6 +174,7 @@ Dashboard:
 - scan diff JSON for new, removed, and changed endpoint risk scores
 - dashboard metrics and history links for scan diffs
 - dashboard diff panel for new, removed, and changed endpoint summaries
+- latest diff guard warning when target or scope changes between compared runs
 - risk-sorted diff preview with visible item counts
 - run compare form for any two historical runs
 - run compare detailed endpoint drilldown tables with explicit new/removed/changed sections

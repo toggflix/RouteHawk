@@ -110,6 +110,43 @@ class WebAppTests(unittest.TestCase):
         self.assertLess(html.index("/api/items/8"), html.index("/api/items/7"))
         self.assertNotIn("/api/items/0", html)
 
+    def test_diff_panel_shows_guard_warning_for_target_or_scope_changes(self):
+        html = _diff_panel(
+            {
+                "new_count": 3,
+                "removed_count": 2,
+                "changed_count": 1,
+                "unchanged_count": 10,
+                "new": [],
+                "removed": [],
+                "changed": [],
+                "target_changed": True,
+                "scope_changed": False,
+                "warning": "Latest diff compares different targets or scopes; counts may not represent real endpoint drift.",
+            }
+        )
+
+        self.assertIn("Diff context warning", html)
+        self.assertIn("different targets or scopes", html)
+
+    def test_diff_panel_hides_guard_warning_for_same_target_and_scope(self):
+        html = _diff_panel(
+            {
+                "new_count": 0,
+                "removed_count": 0,
+                "changed_count": 0,
+                "unchanged_count": 1,
+                "new": [],
+                "removed": [],
+                "changed": [],
+                "target_changed": False,
+                "scope_changed": False,
+                "warning": "",
+            }
+        )
+
+        self.assertNotIn("Diff context warning", html)
+
     def test_dashboard_triage_statuses_persist_to_workspace(self):
         with TemporaryDirectory() as temporary:
             app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
