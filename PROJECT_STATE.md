@@ -175,7 +175,8 @@ Dashboard:
 - dashboard diff panel for new, removed, and changed endpoint summaries
 - risk-sorted diff preview with visible item counts
 - run compare form for any two historical runs
-- run compare detailed endpoint drilldown tables
+- run compare detailed endpoint drilldown tables with explicit new/removed/changed sections
+- changed endpoint details include risk/confidence/tag/source delta summaries
 - readability-focused history cards (run id + compact KPI blocks)
 - persistent triage storage in `.routehawk\triage.json`
 - scan metadata persisted to `.routehawk\routehawk.sqlite`

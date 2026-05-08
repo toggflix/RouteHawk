@@ -25,16 +25,24 @@ class WebAppTests(unittest.TestCase):
                     {
                         "endpoint": "GET /api/admin/export",
                         "risk_score": 90,
+                        "extraction_confidence": "high",
                         "sources": ["openapi"],
                         "tags": ["admin", "data-export"],
+                        "source_urls_count": 1,
+                        "risk_reason_count": 2,
+                        "risk_reasons_preview": ["admin keyword", "export keyword"],
                     }
                 ],
                 "removed": [
                     {
                         "endpoint": "GET /debug/config",
                         "risk_score": 35,
+                        "extraction_confidence": "medium",
                         "sources": ["javascript"],
                         "tags": ["debug"],
+                        "source_urls_count": 1,
+                        "risk_reason_count": 1,
+                        "risk_reasons_preview": ["debug keyword"],
                     }
                 ],
                 "changed": [
@@ -42,11 +50,21 @@ class WebAppTests(unittest.TestCase):
                         "endpoint": "GET /api/users/{id}",
                         "previous_risk_score": 55,
                         "current_risk_score": 80,
+                        "deltas": {
+                            "risk_score": {"previous": 55, "current": 80},
+                            "extraction_confidence": {"previous": "medium", "current": "high"},
+                            "tags": {"added": ["billing"], "removed": []},
+                            "sources": {"added": ["openapi"], "removed": []},
+                        },
                         "current": {
                             "endpoint": "GET /api/users/{id}",
                             "risk_score": 80,
+                            "extraction_confidence": "high",
                             "sources": ["javascript", "openapi"],
-                            "tags": ["object-reference"],
+                            "tags": ["object-reference", "billing"],
+                            "source_urls_count": 2,
+                            "risk_reason_count": 2,
+                            "risk_reasons_preview": ["object identifier", "billing keyword"],
                         },
                     }
                 ],
@@ -55,10 +73,12 @@ class WebAppTests(unittest.TestCase):
 
         self.assertIn("New endpoints", html)
         self.assertIn("Removed endpoints", html)
-        self.assertIn("Changed risk", html)
+        self.assertIn("Changed endpoints", html)
         self.assertIn("/api/admin/export", html)
         self.assertIn("/debug/config", html)
         self.assertIn("risk 55 -> 80", html)
+        self.assertIn("confidence: medium -> high", html)
+        self.assertIn("sources: +[openapi] -[none]", html)
         self.assertIn("Open Diff JSON", html)
         self.assertIn("Showing 1", html)
 
@@ -70,7 +90,15 @@ class WebAppTests(unittest.TestCase):
                 "changed_count": 0,
                 "unchanged_count": 0,
                 "new": [
-                    {"endpoint": f"GET /api/items/{index}", "risk_score": index, "sources": [], "tags": []}
+                    {
+                        "endpoint": f"GET /api/items/{index}",
+                        "risk_score": index,
+                        "sources": [],
+                        "tags": [],
+                        "source_urls_count": 0,
+                        "risk_reason_count": 0,
+                        "risk_reasons_preview": [],
+                    }
                     for index in range(9)
                 ],
                 "removed": [],
@@ -218,12 +246,36 @@ class WebAppTests(unittest.TestCase):
                     {
                         "endpoint": "GET /api/billing/{id}",
                         "risk_score": 90,
+                        "extraction_confidence": "high",
                         "sources": ["openapi"],
                         "tags": ["billing", "object-reference"],
+                        "source_urls_count": 1,
+                        "risk_reason_count": 1,
+                        "risk_reasons_preview": ["billing keyword"],
                     }
                 ],
                 "removed": [],
-                "changed": [],
+                "changed": [
+                    {
+                        "endpoint": "GET /api/users/{id}",
+                        "previous_risk_score": 55,
+                        "current_risk_score": 80,
+                        "deltas": {
+                            "risk_score": {"previous": 55, "current": 80},
+                            "extraction_confidence": {"previous": "medium", "current": "high"},
+                        },
+                        "current": {
+                            "endpoint": "GET /api/users/{id}",
+                            "risk_score": 80,
+                            "extraction_confidence": "high",
+                            "sources": ["javascript", "openapi"],
+                            "tags": ["object-reference"],
+                            "source_urls_count": 2,
+                            "risk_reason_count": 1,
+                            "risk_reasons_preview": ["object identifier"],
+                        },
+                    }
+                ],
             },
             "error": "",
         }
@@ -236,7 +288,36 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("New endpoints", html)
         self.assertIn("Detailed compare", html)
         self.assertIn("/api/billing/{id}", html)
+        self.assertIn("Changed endpoints", html)
+        self.assertIn("risk score: 55 -> 80", html)
+        self.assertIn("confidence: medium -> high", html)
         self.assertIn("risk-badge", html)
+
+    def test_compare_panel_shows_empty_states_for_sections(self):
+        runs = [
+            {"run_id": "20260507-120002", "target": "http://localhost:8088", "generated_at": "t2"},
+            {"run_id": "20260507-120001", "target": "http://localhost:8088", "generated_at": "t1"},
+        ]
+        compare = {
+            "base": "20260507-120001",
+            "head": "20260507-120002",
+            "diff": {
+                "new_count": 0,
+                "removed_count": 0,
+                "changed_count": 0,
+                "unchanged_count": 2,
+                "new": [],
+                "removed": [],
+                "changed": [],
+            },
+            "error": "",
+        }
+
+        html = _compare_panel(runs, compare)
+
+        self.assertIn("No new endpoints", html)
+        self.assertIn("No removed endpoints", html)
+        self.assertIn("No changed endpoints", html)
 
     def test_compare_context_builds_diff_for_known_runs(self):
         with TemporaryDirectory() as temporary:

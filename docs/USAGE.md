@@ -43,6 +43,8 @@ http://127.0.0.1:8090/diff/latest.json
 
 Historical runs include their own `diff.json` link in the scan history panel.
 The compare panel also supports selecting any two runs and rendering a detailed endpoint-level drilldown.
+The run compare drilldown separates `new`, `removed`, and `changed` endpoints so review queues stay readable.
+Changed endpoints include explicit deltas for risk score, extraction confidence, tags, and sources when those values differ between runs.
 
 Finding review buttons in dashboard-generated reports are persisted locally in:
 
