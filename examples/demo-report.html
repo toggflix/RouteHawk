@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RouteHawk Report</title>
+  <style>
+    :root {
+      --ink: #18212f;
+      --muted: #637083;
+      --line: #d9e0ea;
+      --panel: #ffffff;
+      --soft: #f6f8fb;
+      --high: #b42318;
+      --medium: #b66d00;
+      --low: #276749;
+      --accent: #1f5f8b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--soft);
+      color: var(--ink);
+      font-family: "Segoe UI", Arial, sans-serif;
+      line-height: 1.45;
+    }
+    header {
+      background: #101828;
+      color: #fff;
+      padding: 28px 36px;
+    }
+    header h1 { margin: 0 0 8px; font-size: 30px; letter-spacing: 0; }
+    header p { margin: 4px 0; color: #d8dee8; }
+    main { max-width: 1180px; margin: 0 auto; padding: 28px; }
+    section { margin: 0 0 28px; }
+    h2 { margin: 0 0 14px; font-size: 21px; letter-spacing: 0; }
+    h3 { margin: 0 0 10px; font-size: 17px; letter-spacing: 0; }
+    code {
+      background: #eef2f7;
+      color: #111827;
+      padding: 2px 5px;
+      border-radius: 4px;
+      word-break: break-word;
+    }
+    .grid { display: grid; gap: 14px; }
+    .summary { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+    .columns { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .metric, .panel, .finding {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+    }
+    .metric span { display: block; color: var(--muted); font-size: 13px; }
+    .metric strong { display: block; font-size: 28px; margin-top: 4px; }
+    .toolbar {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) repeat(4, minmax(140px, 180px)) auto;
+      gap: 10px;
+      align-items: end;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    label { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    input, select, button {
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      font: inherit;
+      padding: 8px 10px;
+    }
+    button {
+      cursor: pointer;
+      background: #1f5f8b;
+      border-color: #1f5f8b;
+      color: #fff;
+      font-weight: 600;
+    }
+    button.secondary {
+      background: #fff;
+      border-color: #cbd5e1;
+      color: var(--ink);
+    }
+    button.copy {
+      width: auto;
+      margin-top: 8px;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+    .triage {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+      align-items: center;
+    }
+    .triage button {
+      width: auto;
+      background: #fff;
+      color: var(--ink);
+      border-color: #cbd5e1;
+      padding: 6px 10px;
+      font-size: 13px;
+    }
+    .triage button.active {
+      background: #1f5f8b;
+      color: #fff;
+      border-color: #1f5f8b;
+    }
+    .status-badge {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 9px;
+      background: #fbfcfe;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .status-line { color: var(--muted); font-size: 13px; margin: 10px 0 0; }
+    .finding { border-left: 5px solid var(--high); margin-bottom: 14px; }
+    .finding.medium { border-left-color: var(--medium); }
+    .finding.low, .finding.info { border-left-color: var(--low); }
+    .meta { color: var(--muted); font-size: 13px; }
+    ul { margin: 8px 0 0; padding-left: 20px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    th, td {
+      border-bottom: 1px solid var(--line);
+      padding: 10px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+    }
+    th { background: #edf1f6; color: #344054; }
+    tr:last-child td { border-bottom: 0; }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      margin: 0 4px 4px 0;
+      background: #fbfcfe;
+      font-size: 12px;
+      color: #344054;
+    }
+    .score { font-weight: 700; }
+    .score.high { color: var(--high); }
+    .score.medium { color: var(--medium); }
+    .score.low, .score.info { color: var(--low); }
+    .hidden { display: none !important; }
+    .empty { color: var(--muted); }
+    footer { color: var(--muted); font-size: 12px; padding: 6px 0 22px; }
+    @media (max-width: 860px) {
+      .toolbar { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>RouteHawk Report</h1>
+    <p>Scope-safe API and JavaScript reconnaissance summary</p>
+    <p><strong>Target:</strong> <code>http://localhost:8088</code></p>
+    <p><strong>Scope:</strong> localhost</p>
+  </header>
+  <main>
+    <section>
+      <h2>Executive Summary</h2>
+      <div class="grid summary"><div class="metric"><span>Assets</span><strong>1</strong></div><div class="metric"><span>JS Files</span><strong>1</strong></div><div class="metric"><span>Metadata</span><strong>7</strong></div><div class="metric"><span>Endpoints</span><strong>9</strong></div><div class="metric"><span>Findings</span><strong>8</strong></div><div class="metric"><span>High Risk</span><strong>4</strong></div><div class="metric"><span>Medium Risk</span><strong>0</strong></div><div class="metric"><span>Warnings</span><strong>0</strong></div></div>
+    </section>
+    <section>
+      <h2>Filters</h2>
+      <div class="toolbar">
+        <div>
+          <label for="filter-search">Search</label>
+          <input id="filter-search" type="search" placeholder="Route, tag, evidence, source">
+        </div>
+        <div>
+          <label for="filter-severity">Severity</label>
+          <select id="filter-severity">
+            <option value="all">All severities</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="info">Info</option>
+          </select>
+        </div>
+        <div>
+          <label for="filter-source">Source</label>
+          <select id="filter-source">
+            <option value="all">All sources</option>
+            <option value="graphql">graphql</option><option value="javascript">javascript</option><option value="openapi">openapi</option><option value="robots">robots</option><option value="sitemap">sitemap</option>
+          </select>
+        </div>
+        <div>
+          <label for="filter-type">Finding Type</label>
+          <select id="filter-type">
+            <option value="all">All types</option>
+            <option value="admin_authz_candidate">admin_authz_candidate</option><option value="graphql_candidate">graphql_candidate</option><option value="idor_candidate">idor_candidate</option><option value="internal_debug_candidate">internal_debug_candidate</option>
+          </select>
+        </div>
+        <div>
+          <label for="filter-status">Review Status</label>
+          <select id="filter-status">
+            <option value="all">All statuses</option>
+            <option value="unreviewed">Unreviewed</option>
+            <option value="interesting">Interesting</option>
+            <option value="reviewed">Reviewed</option>
+            <option value="ignored">Ignored</option>
+          </select>
+        </div>
+        <button id="filter-reset" class="secondary" type="button">Reset</button>
+      </div>
+      <p class="status-line"><span id="visible-findings">0</span> findings and <span id="visible-endpoints">0</span> endpoints visible.</p>
+    </section>
+    <section class="grid columns">
+      <div class="panel">
+        <h2>Source Coverage</h2>
+        <ul><li>graphql: 1</li><li>javascript: 7</li><li>openapi: 3</li><li>robots: 2</li><li>sitemap: 1</li></ul>
+      </div>
+      <div class="panel">
+        <h2>Classifier Tags</h2>
+        <ul><li>object-reference: 4</li><li>user-object: 3</li><li>admin: 2</li><li>debug: 2</li><li>authorization: 1</li><li>billing: 1</li><li>business-object: 1</li><li>internal: 1</li><li>graphql: 1</li></ul>
+      </div>
+    </section>
+    <section>
+      <h2>Route Groups</h2>
+      <table><thead><tr><th>Prefix</th><th>Routes</th><th>Max Risk</th><th>Methods</th><th>Tags</th></tr></thead><tbody><tr><td><code>/api/admin</code></td><td>1</td><td>95</td><td>POST</td><td><span class="pill">admin</span><span class="pill">authorization</span><span class="pill">object-reference</span><span class="pill">user-object</span></td></tr><tr><td><code>/api/users</code></td><td>2</td><td>85</td><td>GET</td><td><span class="pill">billing</span><span class="pill">object-reference</span><span class="pill">user-object</span></td></tr><tr><td><code>/api/orders</code></td><td>1</td><td>80</td><td>GET</td><td><span class="pill">business-object</span><span class="pill">object-reference</span></td></tr><tr><td><code>/internal/metrics</code></td><td>1</td><td>50</td><td>GET</td><td><span class="pill">debug</span><span class="pill">internal</span></td></tr><tr><td><code>/graphql</code></td><td>1</td><td>45</td><td>GET</td><td><span class="pill">graphql</span></td></tr><tr><td><code>/debug/config</code></td><td>1</td><td>45</td><td>GET</td><td><span class="pill">debug</span></td></tr><tr><td><code>/admin</code></td><td>1</td><td>40</td><td>GET</td><td><span class="pill">admin</span></td></tr><tr><td><code>/api/public</code></td><td>1</td><td>15</td><td>GET</td><td><span class="empty">none</span></td></tr></tbody></table>
+    </section>
+    <section>
+      <h2>Top Manual Test Candidates</h2>
+      <article class="finding high" data-report-item="finding" data-key="POST /api/admin/users/{id}/role" data-status="unreviewed" data-severity="high" data-type="admin_authz_candidate" data-sources="javascript openapi" data-search="post /api/admin/users/{id}/role admin_authz_candidate high admin-related path contains object identifier pattern corroborated by 2 source urls endpoint found in javascript endpoint found in openapi roles or permissions related path user/account/customer object keyword confirm the route is inside the authorized program scope. request the endpoint as a low-privileged authenticated user. compare behavior with an admin or authorized role when available. check whether role and permission enforcement happens server-side. review response codes, redirects, and partial data disclosure. javascript openapi"><h3>[High] <code>POST /api/admin/users/{id}/role</code></h3><p class="meta">Type: admin_authz_candidate | Confidence: medium | Status: <span class="status-badge" data-status-badge>unreviewed</span></p><h4>Evidence</h4><ul><li>Admin-related path</li><li>Contains object identifier pattern</li><li>Corroborated by 2 source URLs</li><li>Endpoint found in javascript</li><li>Endpoint found in openapi</li><li>Roles or permissions related path</li><li>User/account/customer object keyword</li></ul><h4>Manual Test Plan</h4><ul><li>Confirm the route is inside the authorized program scope.</li><li>Request the endpoint as a low-privileged authenticated user.</li><li>Compare behavior with an admin or authorized role when available.</li><li>Check whether role and permission enforcement happens server-side.</li><li>Review response codes, redirects, and partial data disclosure.</li></ul><button class="copy" type="button" data-copy-checklist="Confirm the route is inside the authorized program scope.
+Request the endpoint as a low-privileged authenticated user.
+Compare behavior with an admin or authorized role when available.
+Check whether role and permission enforcement happens server-side.
+Review response codes, redirects, and partial data disclosure.">Copy checklist</button><button class="copy" type="button" data-copy-draft="## POST /api/admin/users/{id}/role
+
+Type: admin_authz_candidate
+Severity: high
+Confidence: medium
+
+### Evidence
+- Admin-related path
+- Contains object identifier pattern
+- Corroborated by 2 source URLs
+- Endpoint found in javascript
+- Endpoint found in openapi
+- Roles or permissions related path
+- User/account/customer object keyword
+
+### Manual Test Plan
+- Confirm the route is inside the authorized program scope.
+- Request the endpoint as a low-privileged authenticated user.
+- Compare behavior with an admin or authorized role when available.
+- Check whether role and permission enforcement happens server-side.
+- Review response codes, redirects, and partial data disclosure.
+">Copy finding draft</button><div class="triage"><button type="button" data-triage="interesting">Interesting</button><button type="button" data-triage="reviewed">Reviewed</button><button type="button" data-triage="ignored">Ignore</button><button type="button" data-triage="unreviewed">Clear</button></div></article><article class="finding high" data-report-item="finding" data-key="GET /api/users/{id}/billing" data-status="unreviewed" data-severity="high" data-type="idor_candidate" data-sources="javascript openapi sitemap" data-search="get /api/users/{id}/billing idor_candidate high billing or payment related path contains object identifier pattern corroborated by 3 source urls endpoint found in javascript endpoint found in openapi endpoint found in sitemap user/account/customer object keyword login as user a. capture a valid request for the endpoint. replace the object identifier with another user&#x27;s known identifier. check status code, response body, and ownership enforcement. repeat with read and write methods when authorized by the program rules. javascript openapi sitemap"><h3>[High] <code>GET /api/users/{id}/billing</code></h3><p class="meta">Type: idor_candidate | Confidence: medium | Status: <span class="status-badge" data-status-badge>unreviewed</span></p><h4>Evidence</h4><ul><li>Billing or payment related path</li><li>Contains object identifier pattern</li><li>Corroborated by 3 source URLs</li><li>Endpoint found in javascript</li><li>Endpoint found in openapi</li><li>Endpoint found in sitemap</li><li>User/account/customer object keyword</li></ul><h4>Manual Test Plan</h4><ul><li>Login as User A.</li><li>Capture a valid request for the endpoint.</li><li>Replace the object identifier with another user&#x27;s known identifier.</li><li>Check status code, response body, and ownership enforcement.</li><li>Repeat with read and write methods when authorized by the program rules.</li></ul><button class="copy" type="button" data-copy-checklist="Login as User A.
+Capture a valid request for the endpoint.
+Replace the object identifier with another user&#x27;s known identifier.
+Check status code, response body, and ownership enforcement.
+Repeat with read and write methods when authorized by the program rules.">Copy checklist</button><button class="copy" type="button" data-copy-draft="## GET /api/users/{id}/billing
+
+Type: idor_candidate
+Severity: high
+Confidence: medium
+
+### Evidence
+- Billing or payment related path
+- Contains object identifier pattern
+- Corroborated by 3 source URLs
+- Endpoint found in javascript
+- Endpoint found in openapi
+- Endpoint found in sitemap
+- User/account/customer object keyword
+
+### Manual Test Plan
+- Login as User A.
+- Capture a valid request for the endpoint.
+- Replace the object identifier with another user&#x27;s known identifier.
+- Check status code, response body, and ownership enforcement.
+- Repeat with read and write methods when authorized by the program rules.
+">Copy finding draft</button><div class="triage"><button type="button" data-triage="interesting">Interesting</button><button type="button" data-triage="reviewed">Reviewed</button><button type="button" data-triage="ignored">Ignore</button><button type="button" data-triage="unreviewed">Clear</button></div></article><article class="finding high" data-report-item="finding" data-key="GET /api/users/{id}/profile" data-status="unreviewed" data-severity="high" data-type="idor_candidate" data-sources="javascript" data-search="get /api/users/{id}/profile idor_candidate high contains object identifier pattern endpoint found in javascript user/account/customer object keyword login as user a. capture a valid request for the endpoint. replace the object identifier with another user&#x27;s known identifier. check status code, response body, and ownership enforcement. repeat with read and write methods when authorized by the program rules. javascript"><h3>[High] <code>GET /api/users/{id}/profile</code></h3><p class="meta">Type: idor_candidate | Confidence: medium | Status: <span class="status-badge" data-status-badge>unreviewed</span></p><h4>Evidence</h4><ul><li>Contains object identifier pattern</li><li>Endpoint found in javascript</li><li>User/account/customer object keyword</li></ul><h4>Manual Test Plan</h4><ul><li>Login as User A.</li><li>Capture a valid request for the endpoint.</li><li>Replace the object identifier with another user&#x27;s known identifier.</li><li>Check status code, response body, and ownership enforcement.</li><li>Repeat with read and write methods when authorized by the program rules.</li></ul><button class="copy" type="button" data-copy-checklist="Login as User A.
+Capture a valid request for the endpoint.
+Replace the object identifier with another user&#x27;s known identifier.
+Check status code, response body, and ownership enforcement.
+Repeat with read and write methods when authorized by the program rules.">Copy checklist</button><button class="copy" type="button" data-copy-draft="## GET /api/users/{id}/profile
+
+Type: idor_candidate
+Severity: high
+Confidence: medium
+
+### Evidence
+- Contains object identifier pattern
+- Endpoint found in javascript
+- User/account/customer object keyword
+
+### Manual Test Plan
+- Login as User A.
+- Capture a valid request for the endpoint.
+- Replace the object identifier with another user&#x27;s known identifier.
+- Check status code, response body, and ownership enforcement.
+- Repeat with read and write methods when authorized by the program rules.
+">Copy finding draft</button><div class="triage"><button type="button" data-triage="interesting">Interesting</button><button type="button" data-triage="reviewed">Reviewed</button><button type="button" data-triage="ignored">Ignore</button><button type="button" data-triage="unreviewed">Clear</button></div></article><article class="finding high" data-report-item="finding" data-key="GET /api/orders/{id}" data-status="unreviewed" data-severity="high" data-type="idor_candidate" data-sources="javascript" data-search="get /api/orders/{id} idor_candidate high business object keyword contains object identifier pattern endpoint found in javascript login as user a. capture a valid request for the endpoint. replace the object identifier with another user&#x27;s known identifier. check status code, response body, and ownership enforcement. repeat with read and write methods when authorized by the program rules. javascript"><h3>[High] <code>GET /api/orders/{id}</code></h3><p class="meta">Type: idor_candidate | Confidence: medium | Status: <span class="status-badge" data-status-badge>unreviewed</span></p><h4>Evidence</h4><ul><li>Business object keyword</li><li>Contains object identifier pattern</li><li>Endpoint found in javascript</li></ul><h4>Manual Test Plan</h4><ul><li>Login as User A.</li><li>Capture a valid request for the endpoint.</li><li>Replace the object identifier with another user&#x27;s known identifier.</li><li>Check status code, response body, and ownership enforcement.</li><li>Repeat with read and write methods when authorized by the program rules.</li></ul><button class="copy" type="button" data-copy-checklist="Login as User A.
+Capture a valid request for the endpoint.
+Replace the object identifier with another user&#x27;s known identifier.
+Check status code, response body, and ownership enforcement.
+Repeat with read and write methods when authorized by the program rules.">Copy checklist</button><button class="copy" type="button" data-copy-draft="## GET /api/orders/{id}
+
+Type: idor_candidate
+Severity: high
+Confidence: medium
+
+### Evidence
+- Business object keyword
+- Contains object identifier pattern
+- Endpoint found in javascript
+
+### Manual Test Plan
+- Login as User A.
+- Capture a valid request for the endpoint.
+- Replace the object identifier with another user&#x27;s known identifier.
+- Check status code, response body, and ownership enforcement.
+- Repeat with read and write methods when authorized by the program rules.
+">Copy finding draft</button><div class="triage"><button type="button" data-triage="interesting">Interesting</button><button type="button" data-triage="reviewed">Reviewed</button><button type="button" data-triage="ignored">Ignore</button><button type="button" data-triage="unreviewed">Clear</button></div></article><article class="finding low" data-report-item="finding" data-key="GET /internal/metrics" data-status="unreviewed" data-severity="low" data-type="internal_debug_candidate" data-sources="javascript openapi" data-search="get /internal/metrics internal_debug_candidate low corroborated by 2 source urls debug/metrics/config route keyword endpoint found in javascript endpoint found in openapi internal/private route keyword confirm the route is intentionally exposed to the tested environment. request the endpoint without credentials and with a low-privileged session. check for environment names, secrets, tokens, stack traces, or internal hostnames. verify whether the endpoint leaks operational metrics or configuration values. document only evidence and avoid changing server state. javascript openapi"><h3>[Low] <code>GET /internal/metrics</code></h3><p class="meta">Type: internal_debug_candidate | Confidence: medium | Status: <span class="status-badge" data-status-badge>unreviewed</span></p><h4>Evidence</h4><ul><li>Corroborated by 2 source URLs</li><li>Debug/metrics/config route keyword</li><li>Endpoint found in javascript</li><li>Endpoint found in openapi</li><li>Internal/private route keyword</li></ul><h4>Manual Test Plan</h4><ul><li>Confirm the route is intentionally exposed to the tested environment.</li><li>Request the endpoint without credentials and with a low-privileged session.</li><li>Check for environment names, secrets, tokens, stack traces, or internal hostnames.</li><li>Verify whether the endpoint leaks operational metrics or configuration values.</li><li>Document only evidence and avoid changing server state.</li></ul><button class="copy" type="button" data-copy-checklist="Confirm the route is intentionally exposed to the tested environment.
+Request the endpoint without credentials and with a low-privileged session.
+Check for environment names, secrets, tokens, stack traces, or internal hostnames.
+Verify whether the endpoint leaks operational metrics or configuration values.
+Document only evidence and avoid changing server state.">Copy checklist</button><button class="copy" type="button" data-copy-draft="## GET /internal/metrics
+
+Type: internal_debug_candidate
+Severity: low
+Confidence: medium
+
+### Evidence
+- Corroborated by 2 source URLs
+- Debug/metrics/config route keyword
+- Endpoint found in javascript
+- Endpoint found in openapi
+- Internal/private route keyword
+
+### Manual Test Plan
+- Confirm the route is intentionally exposed to the tested environment.
+- Request the endpoint without credentials and with a low-privileged session.
+- Check for environment names, secrets, tokens, stack traces, or internal hostnames.
+- Verify whether the endpoint leaks operational metrics or configuration values.
+- Document only evidence and avoid changing server state.
+">Copy finding draft</button><div class="triage"><button type="button" data-triage="interesting">Interesting</button><button type="button" data-triage="reviewed">Reviewed</button><button type="button" data-triage="ignored">Ignore</button><button type="button" data-triage="unreviewed">Clear</button></div></article><article class="finding low" data-report-item="finding" data-key="GET /graphql" data-status="unreviewed" data-severity="low" data-type="graphql_candidate" data-sources="graphql javascript" data-search="get /graphql graphql_candidate low corroborated by 2 source urls endpoint found in graphql endpoint found in javascript graphql route keyword confirm the endpoint accepts graphql-shaped requests without aggressive probing. check whether unauthenticated requests reveal schema or resolver error details. compare authorization behavior across low-privileged and authorized sessions. review object identifier arguments for ownership enforcement candidates. avoid repeated introspection or heavy queries unless explicitly allowed. graphql javascript"><h3>[Low] <code>GET /graphql</code></h3><p class="meta">Type: graphql_candidate | Confidence: medium | Status: <span class="status-badge" data-status-badge>unreviewed</span></p><h4>Evidence</h4><ul><li>Corroborated by 2 source URLs</li><li>Endpoint found in graphql</li><li>Endpoint found in javascript</li><li>GraphQL route keyword</li></ul><h4>Manual Test Plan</h4><ul><li>Confirm the endpoint accepts GraphQL-shaped requests without aggressive probing.</li><li>Check whether unauthenticated requests reveal schema or resolver error details.</li><li>Compare authorization behavior across low-privileged and authorized sessions.</li><li>Review object identifier arguments for ownership enforcement candidates.</li><li>Avoid repeated introspection or heavy queries unless explicitly allowed.</li></ul><button class="copy" type="button" data-copy-checklist="Confirm the endpoint accepts GraphQL-shaped requests without aggressive probing.
+Check whether unauthenticated requests reveal schema or resolver error details.
+Compare authorization behavior across low-privileged and authorized sessions.
+Review object identifier arguments for ownership enforcement candidates.
+Avoid repeated introspection or heavy queries unless explicitly allowed.">Copy checklist</button><button class="copy" type="button" data-copy-draft="## GET /graphql
+
+Type: graphql_candidate
+Severity: low
+Confidence: medium
+
+### Evidence
+- Corroborated by 2 source URLs
+- Endpoint found in graphql
+- Endpoint found in javascript
+- GraphQL route keyword
+
+### Manual Test Plan
+- Confirm the endpoint accepts GraphQL-shaped requests without aggressive probing.
+- Check whether unauthenticated requests reveal schema or resolver error details.
+- Compare authorization behavior across low-privileged and authorized sessions.
+- Review object identifier arguments for ownership enforcement candidates.
+- Avoid repeated introspection or heavy queries unless explicitly allowed.
+">Copy finding draft</button><div class="triage"><button type="button" data-triage="interesting">Interesting</button><button type="button" data-triage="reviewed">Reviewed</button><button type="button" data-triage="ignored">Ignore</button><button type="button" data-triage="unreviewed">Clear</button></div></article><article class="finding low" data-report-item="finding" data-key="GET /debug/config" data-status="unreviewed" data-severity="low" data-type="internal_debug_candidate" data-sources="javascript" data-search="get /debug/config internal_debug_candidate low debug/metrics/config route keyword endpoint found in javascript confirm the route is intentionally exposed to the tested environment. request the endpoint without credentials and with a low-privileged session. check for environment names, secrets, tokens, stack traces, or internal hostnames. verify whether the endpoint leaks operational metrics or configuration values. document only evidence and avoid changing server state. javascript"><h3>[Low] <code>GET /debug/config</code></h3><p class="meta">Type: internal_debug_candidate | Confidence: medium | Status: <span class="status-badge" data-status-badge>unreviewed</span></p><h4>Evidence</h4><ul><li>Debug/metrics/config route keyword</li><li>Endpoint found in javascript</li></ul><h4>Manual Test Plan</h4><ul><li>Confirm the route is intentionally exposed to the tested environment.</li><li>Request the endpoint without credentials and with a low-privileged session.</li><li>Check for environment names, secrets, tokens, stack traces, or internal hostnames.</li><li>Verify whether the endpoint leaks operational metrics or configuration values.</li><li>Document only evidence and avoid changing server state.</li></ul><button class="copy" type="button" data-copy-checklist="Confirm the route is intentionally exposed to the tested environment.
+Request the endpoint without credentials and with a low-privileged session.
+Check for environment names, secrets, tokens, stack traces, or internal hostnames.
+Verify whether the endpoint leaks operational metrics or configuration values.
+Document only evidence and avoid changing server state.">Copy checklist</button><button class="copy" type="button" data-copy-draft="## GET /debug/config
+
+Type: internal_debug_candidate
+Severity: low
+Confidence: medium
+
+### Evidence
+- Debug/metrics/config route keyword
+- Endpoint found in javascript
+
+### Manual Test Plan
+- Confirm the route is intentionally exposed to the tested environment.
+- Request the endpoint without credentials and with a low-privileged session.
+- Check for environment names, secrets, tokens, stack traces, or internal hostnames.
+- Verify whether the endpoint leaks operational metrics or configuration values.
+- Document only evidence and avoid changing server state.
+">Copy finding draft</button><div class="triage"><button type="button" data-triage="interesting">Interesting</button><button type="button" data-triage="reviewed">Reviewed</button><button type="button" data-triage="ignored">Ignore</button><button type="button" data-triage="unreviewed">Clear</button></div></article><article class="finding low" data-report-item="finding" data-key="GET /admin" data-status="unreviewed" data-severity="low" data-type="admin_authz_candidate" data-sources="robots" data-search="get /admin admin_authz_candidate low admin-related path endpoint found in robots confirm the route is inside the authorized program scope. request the endpoint as a low-privileged authenticated user. compare behavior with an admin or authorized role when available. check whether role and permission enforcement happens server-side. review response codes, redirects, and partial data disclosure. robots"><h3>[Low] <code>GET /admin</code></h3><p class="meta">Type: admin_authz_candidate | Confidence: medium | Status: <span class="status-badge" data-status-badge>unreviewed</span></p><h4>Evidence</h4><ul><li>Admin-related path</li><li>Endpoint found in robots</li></ul><h4>Manual Test Plan</h4><ul><li>Confirm the route is inside the authorized program scope.</li><li>Request the endpoint as a low-privileged authenticated user.</li><li>Compare behavior with an admin or authorized role when available.</li><li>Check whether role and permission enforcement happens server-side.</li><li>Review response codes, redirects, and partial data disclosure.</li></ul><button class="copy" type="button" data-copy-checklist="Confirm the route is inside the authorized program scope.
+Request the endpoint as a low-privileged authenticated user.
+Compare behavior with an admin or authorized role when available.
+Check whether role and permission enforcement happens server-side.
+Review response codes, redirects, and partial data disclosure.">Copy checklist</button><button class="copy" type="button" data-copy-draft="## GET /admin
+
+Type: admin_authz_candidate
+Severity: low
+Confidence: medium
+
+### Evidence
+- Admin-related path
+- Endpoint found in robots
+
+### Manual Test Plan
+- Confirm the route is inside the authorized program scope.
+- Request the endpoint as a low-privileged authenticated user.
+- Compare behavior with an admin or authorized role when available.
+- Check whether role and permission enforcement happens server-side.
+- Review response codes, redirects, and partial data disclosure.
+">Copy finding draft</button><div class="triage"><button type="button" data-triage="interesting">Interesting</button><button type="button" data-triage="reviewed">Reviewed</button><button type="button" data-triage="ignored">Ignore</button><button type="button" data-triage="unreviewed">Clear</button></div></article>
+    </section>
+    <section>
+      <h2>Discovered Assets</h2>
+      <table><thead><tr><th>Asset</th><th>Status</th><th>Title</th><th>Technologies</th></tr></thead><tbody><tr><td><code>http://localhost</code></td><td>200</td><td>RouteHawk Demo Target</td><td>unknown</td></tr></tbody></table>
+    </section>
+    <section class="grid columns">
+      <div class="panel">
+        <h2>JavaScript Files</h2>
+        <table><thead><tr><th>URL</th><th>Bytes</th><th>Endpoints</th><th>SHA-256</th></tr></thead><tbody><tr><td><code>http://localhost:8088/static/main.js</code></td><td>263</td><td>7</td><td><code>019c3863ddd934b7</code></td></tr></tbody></table>
+      </div>
+      <div class="panel">
+        <h2>Metadata</h2>
+        <table><thead><tr><th>Source</th><th>Status</th><th>URL</th><th>Details</th></tr></thead><tbody><tr><td>security_headers</td><td>200</td><td><code>http://localhost:8088</code></td><td>missing: [&#x27;content-security-policy&#x27;, &#x27;x-frame-options&#x27;, &#x27;x-content-type-options&#x27;, &#x27;referrer-policy&#x27;]</td></tr><tr><td>cors</td><td>200</td><td><code>http://localhost:8088</code></td><td>signals: []</td></tr><tr><td>robots</td><td>200</td><td><code>http://localhost:8088/robots.txt</code></td><td>entries: 2</td></tr><tr><td>sitemap</td><td>200</td><td><code>http://localhost:8088/sitemap.xml</code></td><td>urls: 1</td></tr><tr><td>openapi</td><td>200</td><td><code>http://localhost:8088/swagger.json</code></td><td>paths: 3</td></tr><tr><td>security.txt</td><td>200</td><td><code>http://localhost:8088/.well-known/security.txt</code></td><td>fields: [&#x27;contact&#x27;, &#x27;policy&#x27;, &#x27;preferred-languages&#x27;], contact_count: 1</td></tr><tr><td>graphql</td><td>200</td><td><code>http://localhost:8088/graphql</code></td><td>get_status: 404, post_status: 200, graphql_response_hint: False</td></tr></tbody></table>
+      </div>
+    </section>
+    <section>
+      <h2>Endpoint Inventory</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Method</th>
+            <th>Route</th>
+            <th>Risk</th>
+            <th>Sources</th>
+            <th>Tags</th>
+          </tr>
+        </thead>
+        <tbody><tr data-report-item="endpoint" data-severity="high" data-sources="javascript openapi" data-search="post /api/admin/users/{id}/role /api/admin/users/1/role /api/admin/users/{id}/role javascript openapi admin authorization object-reference user-object"><td>POST</td><td><code>/api/admin/users/{id}/role</code><br><span class="meta">Raw variants: 2</span></td><td><span class="score high">95</span><br><span class="meta">high</span></td><td title="http://localhost:8088/static/main.js
+http://localhost:8088/swagger.json"><span class="pill">javascript</span><span class="pill">openapi</span></td><td><span class="pill">admin</span><span class="pill">authorization</span><span class="pill">object-reference</span><span class="pill">user-object</span></td></tr><tr data-report-item="endpoint" data-severity="high" data-sources="javascript openapi sitemap" data-search="get /api/users/{id}/billing /api/users/1/billing /api/users/{id}/billing javascript openapi sitemap billing object-reference user-object"><td>GET</td><td><code>/api/users/{id}/billing</code><br><span class="meta">Raw variants: 2</span></td><td><span class="score high">85</span><br><span class="meta">high</span></td><td title="http://localhost:8088/sitemap.xml
+http://localhost:8088/static/main.js
+http://localhost:8088/swagger.json"><span class="pill">javascript</span><span class="pill">openapi</span><span class="pill">sitemap</span></td><td><span class="pill">billing</span><span class="pill">object-reference</span><span class="pill">user-object</span></td></tr><tr data-report-item="endpoint" data-severity="high" data-sources="javascript" data-search="get /api/users/{id}/profile /api/users/1/profile javascript object-reference user-object"><td>GET</td><td><code>/api/users/{id}/profile</code><br><span class="meta">Raw variants: 1</span></td><td><span class="score high">80</span><br><span class="meta">high</span></td><td title="http://localhost:8088/static/main.js"><span class="pill">javascript</span></td><td><span class="pill">object-reference</span><span class="pill">user-object</span></td></tr><tr data-report-item="endpoint" data-severity="high" data-sources="javascript" data-search="get /api/orders/{id} /api/orders/1001 javascript business-object object-reference"><td>GET</td><td><code>/api/orders/{id}</code><br><span class="meta">Raw variants: 1</span></td><td><span class="score high">80</span><br><span class="meta">high</span></td><td title="http://localhost:8088/static/main.js"><span class="pill">javascript</span></td><td><span class="pill">business-object</span><span class="pill">object-reference</span></td></tr><tr data-report-item="endpoint" data-severity="low" data-sources="javascript openapi" data-search="get /internal/metrics /internal/metrics javascript openapi debug internal"><td>GET</td><td><code>/internal/metrics</code><br><span class="meta">Raw variants: 1</span></td><td><span class="score low">50</span><br><span class="meta">low</span></td><td title="http://localhost:8088/static/main.js
+http://localhost:8088/swagger.json"><span class="pill">javascript</span><span class="pill">openapi</span></td><td><span class="pill">debug</span><span class="pill">internal</span></td></tr><tr data-report-item="endpoint" data-severity="low" data-sources="graphql javascript" data-search="get /graphql /graphql graphql javascript graphql"><td>GET</td><td><code>/graphql</code><br><span class="meta">Raw variants: 1</span></td><td><span class="score low">45</span><br><span class="meta">low</span></td><td title="http://localhost:8088/graphql
+http://localhost:8088/static/main.js"><span class="pill">graphql</span><span class="pill">javascript</span></td><td><span class="pill">graphql</span></td></tr><tr data-report-item="endpoint" data-severity="low" data-sources="javascript" data-search="get /debug/config /debug/config javascript debug"><td>GET</td><td><code>/debug/config</code><br><span class="meta">Raw variants: 1</span></td><td><span class="score low">45</span><br><span class="meta">low</span></td><td title="http://localhost:8088/static/main.js"><span class="pill">javascript</span></td><td><span class="pill">debug</span></td></tr><tr data-report-item="endpoint" data-severity="low" data-sources="robots" data-search="get /admin /admin robots admin"><td>GET</td><td><code>/admin</code><br><span class="meta">Raw variants: 1</span></td><td><span class="score low">40</span><br><span class="meta">low</span></td><td title="http://localhost:8088/robots.txt"><span class="pill">robots</span></td><td><span class="pill">admin</span></td></tr><tr data-report-item="endpoint" data-severity="info" data-sources="robots" data-search="get /api/public /api/public robots "><td>GET</td><td><code>/api/public</code><br><span class="meta">Raw variants: 1</span></td><td><span class="score info">15</span><br><span class="meta">info</span></td><td title="http://localhost:8088/robots.txt"><span class="pill">robots</span></td><td><span class="empty">none</span></td></tr></tbody>
+      </table>
+    </section>
+    <section>
+      <h2>Warnings</h2>
+      <p class="empty">No warnings.</p>
+    </section>
+    <footer>Generated by RouteHawk. This report provides prioritization and manual testing guidance only.</footer>
+  </main>
+  <script>
+    (function () {
+      const search = document.getElementById("filter-search");
+      const severity = document.getElementById("filter-severity");
+      const source = document.getElementById("filter-source");
+      const type = document.getElementById("filter-type");
+      const status = document.getElementById("filter-status");
+      const reset = document.getElementById("filter-reset");
+      const findingCount = document.getElementById("visible-findings");
+      const endpointCount = document.getElementById("visible-endpoints");
+      const findings = Array.from(document.querySelectorAll("[data-report-item='finding']"));
+      const endpoints = Array.from(document.querySelectorAll("[data-report-item='endpoint']"));
+      const storagePrefix = "routehawk:triage:" + window.location.pathname + ":";
+      const triageLoadUrl = "";
+      const triageUpdateUrl = "";
+
+      function tokens(value) {
+        return (value || "").split(" ").filter(Boolean);
+      }
+
+      function visibleByCommonFilters(element) {
+        const query = search.value.trim().toLowerCase();
+        const severityValue = severity.value;
+        const sourceValue = source.value;
+        const text = element.dataset.search || "";
+        const sourceTokens = tokens(element.dataset.sources || "");
+
+        if (query && !text.includes(query)) return false;
+        if (severityValue !== "all" && element.dataset.severity !== severityValue) return false;
+        if (sourceValue !== "all" && !sourceTokens.includes(sourceValue)) return false;
+        return true;
+      }
+
+      function applyFilters() {
+        let shownFindings = 0;
+        let shownEndpoints = 0;
+        const typeValue = type.value;
+        const statusValue = status.value;
+
+        findings.forEach((element) => {
+          const visible =
+            visibleByCommonFilters(element) &&
+            (typeValue === "all" || element.dataset.type === typeValue) &&
+            (statusValue === "all" || element.dataset.status === statusValue);
+          element.classList.toggle("hidden", !visible);
+          if (visible) shownFindings += 1;
+        });
+
+        endpoints.forEach((element) => {
+          const visible = visibleByCommonFilters(element);
+          element.classList.toggle("hidden", !visible);
+          if (visible) shownEndpoints += 1;
+        });
+
+        findingCount.textContent = String(shownFindings);
+        endpointCount.textContent = String(shownEndpoints);
+      }
+
+      function setStatus(card, value, persist) {
+        if (persist === undefined) persist = true;
+        card.dataset.status = value;
+        const badge = card.querySelector("[data-status-badge]");
+        if (badge) badge.textContent = value;
+        card.querySelectorAll("[data-triage]").forEach((button) => {
+          button.classList.toggle("active", button.dataset.triage === value);
+        });
+        if (persist) {
+          try {
+            window.localStorage.setItem(storagePrefix + card.dataset.key, value);
+          } catch (error) {
+            // localStorage can be unavailable in hardened browser settings.
+          }
+          persistRemoteStatus(card.dataset.key, value);
+        }
+        applyFilters();
+      }
+
+      function persistRemoteStatus(key, value) {
+        if (!triageUpdateUrl) return;
+        fetch(triageUpdateUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: key, status: value })
+        }).catch(() => {});
+      }
+
+      async function loadRemoteStatuses() {
+        if (!triageLoadUrl) return {};
+        try {
+          const response = await fetch(triageLoadUrl, { cache: "no-store" });
+          if (!response.ok) return {};
+          const payload = await response.json();
+          return payload && payload.statuses ? payload.statuses : {};
+        } catch (error) {
+          return {};
+        }
+      }
+
+      findings.forEach((card) => {
+        let saved = "unreviewed";
+        try {
+          saved = window.localStorage.getItem(storagePrefix + card.dataset.key) || "unreviewed";
+        } catch (error) {
+          saved = "unreviewed";
+        }
+        setStatus(card, saved, false);
+        card.querySelectorAll("[data-triage]").forEach((button) => {
+          button.addEventListener("click", () => setStatus(card, button.dataset.triage, true));
+        });
+      });
+
+      loadRemoteStatuses().then((statuses) => {
+        findings.forEach((card) => {
+          const value = statuses[card.dataset.key];
+          if (value) setStatus(card, value, false);
+        });
+      });
+
+      document.querySelectorAll("[data-copy-checklist]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const text = button.dataset.copyChecklist || "";
+          try {
+            await navigator.clipboard.writeText(text);
+            button.textContent = "Copied";
+            window.setTimeout(() => { button.textContent = "Copy checklist"; }, 1200);
+          } catch (error) {
+            button.textContent = "Copy failed";
+            window.setTimeout(() => { button.textContent = "Copy checklist"; }, 1200);
+          }
+        });
+      });
+
+      document.querySelectorAll("[data-copy-draft]").forEach((button) => {
+        button.addEventListener("click", async () => {
+          const text = button.dataset.copyDraft || "";
+          try {
+            await navigator.clipboard.writeText(text);
+            button.textContent = "Draft copied";
+            window.setTimeout(() => { button.textContent = "Copy finding draft"; }, 1200);
+          } catch (error) {
+            button.textContent = "Copy failed";
+            window.setTimeout(() => { button.textContent = "Copy finding draft"; }, 1200);
+          }
+        });
+      });
+
+      [search, severity, source, type, status].forEach((control) => {
+        control.addEventListener("input", applyFilters);
+        control.addEventListener("change", applyFilters);
+      });
+      reset.addEventListener("click", () => {
+        search.value = "";
+        severity.value = "all";
+        source.value = "all";
+        type.value = "all";
+        status.value = "all";
+        applyFilters();
+      });
+      applyFilters();
+    })();
+  </script>
+</body>
+</html>

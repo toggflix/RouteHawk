@@ -1,6 +1,6 @@
 # RouteHawk
 
-RouteHawk is a scope-safe API and JavaScript reconnaissance assistant for authorized bug bounty workflows.
+RouteHawk is a local-first, scope-safe API reconnaissance workspace that turns noisy endpoint discovery into prioritized, evidence-backed manual security review tasks.
 
 It extracts endpoints from JavaScript bundles, OpenAPI documents, robots.txt, sitemap.xml and common metadata files, normalizes discovered routes, classifies risky API patterns, and generates manual testing checklists for authorization, IDOR, admin/internal/debug exposure and API surface review.
 
@@ -17,6 +17,7 @@ This repository contains a working v0.1 local product:
 - Dashboard scan history, diff view, and persistent triage
 - SQLite-backed run storage and historical report regeneration
 - Import parsers for httpx, subfinder, nuclei, and nmap outputs
+- Route group summaries for quickly spotting high-risk API families
 - Safe demo lab with Python and Docker Compose options
 
 ## Quick start
@@ -56,6 +57,12 @@ py -m routehawk scan --config config.local-lab.yaml --out report.html
 ```
 
 The generated report highlights IDOR/authz/admin/internal/debug candidates from JavaScript, robots.txt, sitemap.xml, and OpenAPI evidence.
+
+Example outputs from the demo lab are committed under [`examples/`](examples/):
+
+- [`examples/demo-results.json`](examples/demo-results.json)
+- [`examples/demo-report.md`](examples/demo-report.md)
+- [`examples/demo-report.html`](examples/demo-report.html)
 
 ## Local dashboard
 
@@ -125,6 +132,7 @@ Current reports also include:
 - JavaScript files analyzed with SHA-256 hashes and endpoint counts
 - Metadata records from robots.txt, sitemap.xml, security.txt, OpenAPI, and GraphQL probes
 - Security header and CORS summaries
+- Route group summaries by normalized path prefix
 - Finding-specific manual checklists for IDOR, admin/authz, internal/debug, and GraphQL candidates
 
 Optional auth behavior probes can be enabled in config. They use limited HEAD requests and are disabled by default.
@@ -136,6 +144,7 @@ Development state is tracked in:
 - `PROJECT_STATE.md`
 - `docs/ROADMAP.md`
 - `docs/DECISIONS.md`
+- `docs/PRODUCT.md`
 - `docs/USAGE.md`
 - `docs/RELEASE_CHECKLIST.md`
 

@@ -1,0 +1,520 @@
+{
+  "target": "http://localhost:8088",
+  "scope": [
+    "localhost"
+  ],
+  "assets": [
+    {
+      "host": "localhost",
+      "scheme": "http",
+      "ip": null,
+      "status": 200,
+      "title": "RouteHawk Demo Target",
+      "technologies": []
+    }
+  ],
+  "javascript_files": [
+    {
+      "url": "http://localhost:8088/static/main.js",
+      "sha256": "019c3863ddd934b7f6b83e9de4f46a6ef3a8fff5525072534f170157b67863ea",
+      "cache_path": ".cache\\javascript\\019c3863ddd934b7f6b83e9de4f46a6ef3a8fff5525072534f170157b67863ea.js",
+      "size": 263,
+      "endpoints_found": 7
+    }
+  ],
+  "metadata": [
+    {
+      "source": "security_headers",
+      "url": "http://localhost:8088",
+      "status": 200,
+      "details": {
+        "missing": [
+          "content-security-policy",
+          "x-frame-options",
+          "x-content-type-options",
+          "referrer-policy"
+        ]
+      }
+    },
+    {
+      "source": "cors",
+      "url": "http://localhost:8088",
+      "status": 200,
+      "details": {
+        "signals": []
+      }
+    },
+    {
+      "source": "robots",
+      "url": "http://localhost:8088/robots.txt",
+      "status": 200,
+      "details": {
+        "entries": 2
+      }
+    },
+    {
+      "source": "sitemap",
+      "url": "http://localhost:8088/sitemap.xml",
+      "status": 200,
+      "details": {
+        "urls": 1
+      }
+    },
+    {
+      "source": "openapi",
+      "url": "http://localhost:8088/swagger.json",
+      "status": 200,
+      "details": {
+        "paths": 3
+      }
+    },
+    {
+      "source": "security.txt",
+      "url": "http://localhost:8088/.well-known/security.txt",
+      "status": 200,
+      "details": {
+        "fields": [
+          "contact",
+          "policy",
+          "preferred-languages"
+        ],
+        "contact_count": 1
+      }
+    },
+    {
+      "source": "graphql",
+      "url": "http://localhost:8088/graphql",
+      "status": 200,
+      "details": {
+        "get_status": 404,
+        "post_status": 200,
+        "graphql_response_hint": false
+      }
+    }
+  ],
+  "endpoints": [
+    {
+      "source": "openapi",
+      "source_url": "http://localhost:8088/swagger.json",
+      "method": "POST",
+      "raw_path": "/api/admin/users/{id}/role",
+      "normalized_path": "/api/admin/users/{id}/role",
+      "parameters": [],
+      "tags": [
+        "admin",
+        "authorization",
+        "object-reference",
+        "user-object"
+      ],
+      "risk_score": 95,
+      "sources": [
+        "javascript",
+        "openapi"
+      ],
+      "source_urls": [
+        "http://localhost:8088/static/main.js",
+        "http://localhost:8088/swagger.json"
+      ],
+      "raw_paths": [
+        "/api/admin/users/1/role",
+        "/api/admin/users/{id}/role"
+      ],
+      "evidence": [
+        "Admin-related path",
+        "Contains object identifier pattern",
+        "Corroborated by 2 source URLs",
+        "Endpoint found in javascript",
+        "Endpoint found in openapi",
+        "Roles or permissions related path",
+        "User/account/customer object keyword"
+      ]
+    },
+    {
+      "source": "openapi",
+      "source_url": "http://localhost:8088/swagger.json",
+      "method": "GET",
+      "raw_path": "/api/users/{id}/billing",
+      "normalized_path": "/api/users/{id}/billing",
+      "parameters": [],
+      "tags": [
+        "billing",
+        "object-reference",
+        "user-object"
+      ],
+      "risk_score": 85,
+      "sources": [
+        "javascript",
+        "openapi",
+        "sitemap"
+      ],
+      "source_urls": [
+        "http://localhost:8088/sitemap.xml",
+        "http://localhost:8088/static/main.js",
+        "http://localhost:8088/swagger.json"
+      ],
+      "raw_paths": [
+        "/api/users/1/billing",
+        "/api/users/{id}/billing"
+      ],
+      "evidence": [
+        "Billing or payment related path",
+        "Contains object identifier pattern",
+        "Corroborated by 3 source URLs",
+        "Endpoint found in javascript",
+        "Endpoint found in openapi",
+        "Endpoint found in sitemap",
+        "User/account/customer object keyword"
+      ]
+    },
+    {
+      "source": "javascript",
+      "source_url": "http://localhost:8088/static/main.js",
+      "method": "GET",
+      "raw_path": "/api/users/1/profile",
+      "normalized_path": "/api/users/{id}/profile",
+      "parameters": [],
+      "tags": [
+        "object-reference",
+        "user-object"
+      ],
+      "risk_score": 80,
+      "sources": [
+        "javascript"
+      ],
+      "source_urls": [
+        "http://localhost:8088/static/main.js"
+      ],
+      "raw_paths": [
+        "/api/users/1/profile"
+      ],
+      "evidence": [
+        "Contains object identifier pattern",
+        "Endpoint found in javascript",
+        "User/account/customer object keyword"
+      ]
+    },
+    {
+      "source": "javascript",
+      "source_url": "http://localhost:8088/static/main.js",
+      "method": "GET",
+      "raw_path": "/api/orders/1001",
+      "normalized_path": "/api/orders/{id}",
+      "parameters": [],
+      "tags": [
+        "business-object",
+        "object-reference"
+      ],
+      "risk_score": 80,
+      "sources": [
+        "javascript"
+      ],
+      "source_urls": [
+        "http://localhost:8088/static/main.js"
+      ],
+      "raw_paths": [
+        "/api/orders/1001"
+      ],
+      "evidence": [
+        "Business object keyword",
+        "Contains object identifier pattern",
+        "Endpoint found in javascript"
+      ]
+    },
+    {
+      "source": "openapi",
+      "source_url": "http://localhost:8088/swagger.json",
+      "method": "GET",
+      "raw_path": "/internal/metrics",
+      "normalized_path": "/internal/metrics",
+      "parameters": [],
+      "tags": [
+        "debug",
+        "internal"
+      ],
+      "risk_score": 50,
+      "sources": [
+        "javascript",
+        "openapi"
+      ],
+      "source_urls": [
+        "http://localhost:8088/static/main.js",
+        "http://localhost:8088/swagger.json"
+      ],
+      "raw_paths": [
+        "/internal/metrics"
+      ],
+      "evidence": [
+        "Corroborated by 2 source URLs",
+        "Debug/metrics/config route keyword",
+        "Endpoint found in javascript",
+        "Endpoint found in openapi",
+        "Internal/private route keyword"
+      ]
+    },
+    {
+      "source": "javascript",
+      "source_url": "http://localhost:8088/static/main.js",
+      "method": "GET",
+      "raw_path": "/graphql",
+      "normalized_path": "/graphql",
+      "parameters": [],
+      "tags": [
+        "graphql"
+      ],
+      "risk_score": 45,
+      "sources": [
+        "graphql",
+        "javascript"
+      ],
+      "source_urls": [
+        "http://localhost:8088/graphql",
+        "http://localhost:8088/static/main.js"
+      ],
+      "raw_paths": [
+        "/graphql"
+      ],
+      "evidence": [
+        "Corroborated by 2 source URLs",
+        "Endpoint found in graphql",
+        "Endpoint found in javascript",
+        "GraphQL route keyword"
+      ]
+    },
+    {
+      "source": "javascript",
+      "source_url": "http://localhost:8088/static/main.js",
+      "method": "GET",
+      "raw_path": "/debug/config",
+      "normalized_path": "/debug/config",
+      "parameters": [],
+      "tags": [
+        "debug"
+      ],
+      "risk_score": 45,
+      "sources": [
+        "javascript"
+      ],
+      "source_urls": [
+        "http://localhost:8088/static/main.js"
+      ],
+      "raw_paths": [
+        "/debug/config"
+      ],
+      "evidence": [
+        "Debug/metrics/config route keyword",
+        "Endpoint found in javascript"
+      ]
+    },
+    {
+      "source": "robots",
+      "source_url": "http://localhost:8088/robots.txt",
+      "method": "GET",
+      "raw_path": "/admin",
+      "normalized_path": "/admin",
+      "parameters": [],
+      "tags": [
+        "admin"
+      ],
+      "risk_score": 40,
+      "sources": [
+        "robots"
+      ],
+      "source_urls": [
+        "http://localhost:8088/robots.txt"
+      ],
+      "raw_paths": [
+        "/admin"
+      ],
+      "evidence": [
+        "Admin-related path",
+        "Endpoint found in robots"
+      ]
+    },
+    {
+      "source": "robots",
+      "source_url": "http://localhost:8088/robots.txt",
+      "method": "GET",
+      "raw_path": "/api/public",
+      "normalized_path": "/api/public",
+      "parameters": [],
+      "tags": [],
+      "risk_score": 15,
+      "sources": [
+        "robots"
+      ],
+      "source_urls": [
+        "http://localhost:8088/robots.txt"
+      ],
+      "raw_paths": [
+        "/api/public"
+      ],
+      "evidence": [
+        "Endpoint found in robots"
+      ]
+    }
+  ],
+  "findings": [
+    {
+      "type": "admin_authz_candidate",
+      "severity": "high",
+      "target": "http://localhost:8088",
+      "endpoint": "POST /api/admin/users/{id}/role",
+      "evidence": [
+        "Admin-related path",
+        "Contains object identifier pattern",
+        "Corroborated by 2 source URLs",
+        "Endpoint found in javascript",
+        "Endpoint found in openapi",
+        "Roles or permissions related path",
+        "User/account/customer object keyword"
+      ],
+      "manual_check": [
+        "Confirm the route is inside the authorized program scope.",
+        "Request the endpoint as a low-privileged authenticated user.",
+        "Compare behavior with an admin or authorized role when available.",
+        "Check whether role and permission enforcement happens server-side.",
+        "Review response codes, redirects, and partial data disclosure."
+      ],
+      "confidence": "medium"
+    },
+    {
+      "type": "idor_candidate",
+      "severity": "high",
+      "target": "http://localhost:8088",
+      "endpoint": "GET /api/users/{id}/billing",
+      "evidence": [
+        "Billing or payment related path",
+        "Contains object identifier pattern",
+        "Corroborated by 3 source URLs",
+        "Endpoint found in javascript",
+        "Endpoint found in openapi",
+        "Endpoint found in sitemap",
+        "User/account/customer object keyword"
+      ],
+      "manual_check": [
+        "Login as User A.",
+        "Capture a valid request for the endpoint.",
+        "Replace the object identifier with another user's known identifier.",
+        "Check status code, response body, and ownership enforcement.",
+        "Repeat with read and write methods when authorized by the program rules."
+      ],
+      "confidence": "medium"
+    },
+    {
+      "type": "idor_candidate",
+      "severity": "high",
+      "target": "http://localhost:8088",
+      "endpoint": "GET /api/users/{id}/profile",
+      "evidence": [
+        "Contains object identifier pattern",
+        "Endpoint found in javascript",
+        "User/account/customer object keyword"
+      ],
+      "manual_check": [
+        "Login as User A.",
+        "Capture a valid request for the endpoint.",
+        "Replace the object identifier with another user's known identifier.",
+        "Check status code, response body, and ownership enforcement.",
+        "Repeat with read and write methods when authorized by the program rules."
+      ],
+      "confidence": "medium"
+    },
+    {
+      "type": "idor_candidate",
+      "severity": "high",
+      "target": "http://localhost:8088",
+      "endpoint": "GET /api/orders/{id}",
+      "evidence": [
+        "Business object keyword",
+        "Contains object identifier pattern",
+        "Endpoint found in javascript"
+      ],
+      "manual_check": [
+        "Login as User A.",
+        "Capture a valid request for the endpoint.",
+        "Replace the object identifier with another user's known identifier.",
+        "Check status code, response body, and ownership enforcement.",
+        "Repeat with read and write methods when authorized by the program rules."
+      ],
+      "confidence": "medium"
+    },
+    {
+      "type": "internal_debug_candidate",
+      "severity": "low",
+      "target": "http://localhost:8088",
+      "endpoint": "GET /internal/metrics",
+      "evidence": [
+        "Corroborated by 2 source URLs",
+        "Debug/metrics/config route keyword",
+        "Endpoint found in javascript",
+        "Endpoint found in openapi",
+        "Internal/private route keyword"
+      ],
+      "manual_check": [
+        "Confirm the route is intentionally exposed to the tested environment.",
+        "Request the endpoint without credentials and with a low-privileged session.",
+        "Check for environment names, secrets, tokens, stack traces, or internal hostnames.",
+        "Verify whether the endpoint leaks operational metrics or configuration values.",
+        "Document only evidence and avoid changing server state."
+      ],
+      "confidence": "medium"
+    },
+    {
+      "type": "graphql_candidate",
+      "severity": "low",
+      "target": "http://localhost:8088",
+      "endpoint": "GET /graphql",
+      "evidence": [
+        "Corroborated by 2 source URLs",
+        "Endpoint found in graphql",
+        "Endpoint found in javascript",
+        "GraphQL route keyword"
+      ],
+      "manual_check": [
+        "Confirm the endpoint accepts GraphQL-shaped requests without aggressive probing.",
+        "Check whether unauthenticated requests reveal schema or resolver error details.",
+        "Compare authorization behavior across low-privileged and authorized sessions.",
+        "Review object identifier arguments for ownership enforcement candidates.",
+        "Avoid repeated introspection or heavy queries unless explicitly allowed."
+      ],
+      "confidence": "medium"
+    },
+    {
+      "type": "internal_debug_candidate",
+      "severity": "low",
+      "target": "http://localhost:8088",
+      "endpoint": "GET /debug/config",
+      "evidence": [
+        "Debug/metrics/config route keyword",
+        "Endpoint found in javascript"
+      ],
+      "manual_check": [
+        "Confirm the route is intentionally exposed to the tested environment.",
+        "Request the endpoint without credentials and with a low-privileged session.",
+        "Check for environment names, secrets, tokens, stack traces, or internal hostnames.",
+        "Verify whether the endpoint leaks operational metrics or configuration values.",
+        "Document only evidence and avoid changing server state."
+      ],
+      "confidence": "medium"
+    },
+    {
+      "type": "admin_authz_candidate",
+      "severity": "low",
+      "target": "http://localhost:8088",
+      "endpoint": "GET /admin",
+      "evidence": [
+        "Admin-related path",
+        "Endpoint found in robots"
+      ],
+      "manual_check": [
+        "Confirm the route is inside the authorized program scope.",
+        "Request the endpoint as a low-privileged authenticated user.",
+        "Compare behavior with an admin or authorized role when available.",
+        "Check whether role and permission enforcement happens server-side.",
+        "Review response codes, redirects, and partial data disclosure."
+      ],
+      "confidence": "medium"
+    }
+  ],
+  "warnings": []
+}

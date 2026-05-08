@@ -10,7 +10,9 @@
 - Collectors for JavaScript assets, robots.txt, sitemap.xml, security.txt, OpenAPI/Swagger, and GraphQL candidate paths.
 - Security headers and CORS metadata summaries.
 - Optional, disabled-by-default HEAD-based auth behavior probes.
+- Route group summaries by normalized endpoint prefix.
 - JSON, Markdown, and interactive HTML reports.
+- Committed safe demo outputs under `examples/`.
 - Persistent dashboard triage in `.routehawk/triage.json`.
 - SQLite scan metadata and result/diff storage in `.routehawk/routehawk.sqlite`.
 - SQLite-backed dashboard history and report/result/diff retrieval.

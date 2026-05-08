@@ -108,6 +108,7 @@ Analyzers:
 
 - optional disabled-by-default HEAD-based auth behavior classification
 - security header and CORS metadata summaries
+- route group clustering by normalized endpoint prefix
 - regex endpoint extraction
 - static asset and CDN-like false-positive suppression during endpoint extraction
 - config-driven suppression for custom suffix, path prefix, and regex noise rules
@@ -122,6 +123,8 @@ Reports:
 - JSON output
 - Markdown report
 - interactive HTML report
+- committed demo examples under `examples/`
+- route group summary section
 - source coverage
 - classifier tag summary
 - JS file inventory
@@ -171,7 +174,7 @@ Demo lab:
 Latest test command passed:
 
 ```text
-53 tests passed
+55 tests passed
 ```
 
 Latest compile check passed:
