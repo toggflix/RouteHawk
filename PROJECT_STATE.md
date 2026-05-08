@@ -181,6 +181,14 @@ Dashboard:
 - persistent triage storage in `.routehawk\triage.json`
 - scan metadata persisted to `.routehawk\routehawk.sqlite`
 
+Docs/demo:
+
+- README product messaging polished around local-first endpoint intelligence and strict safety boundaries
+- README quick demo flow now emphasizes safe local lab run and report generation
+- docs/USAGE includes quick demo and compare drilldown guidance
+- docs/PRODUCT includes user-value framing and GitHub storytelling notes
+- examples/README clarifies demo artifact purpose for output shape review
+
 Automation:
 
 - GitHub Actions matrix CI (`.github/workflows/ci.yml`)
@@ -205,7 +213,7 @@ Demo lab:
 Latest test command passed:
 
 ```text
-74 tests passed
+77 tests passed
 ```
 
 Latest compile check passed:
@@ -259,7 +267,7 @@ RouteHawk differentiators:
 High priority:
 
 - Add safer HTML extraction heuristics if HTML endpoint extraction is re-enabled later.
-- Add README screenshots and polished usage examples.
+- Add README/dashboard screenshots for first-visit visual orientation.
 
 Medium priority:
 

@@ -11,6 +11,9 @@ Current demo outputs include:
 - endpoint confidence values (`low`/`medium`/`high`)
 - risk score reason breakdowns per endpoint
 - compare-ready endpoint inventory fields for diff workflows
+- evidence snapshots suitable for dashboard compare drilldown (`new`, `removed`, `changed`)
+
+Use these examples to quickly understand RouteHawk output shape before running your own authorized scans.
 
 Regenerate them with:
 

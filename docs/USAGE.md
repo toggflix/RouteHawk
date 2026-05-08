@@ -1,5 +1,29 @@
 # RouteHawk Usage
 
+## Quick Demo
+
+Install RouteHawk locally:
+
+```powershell
+py -m pip install -e .
+```
+
+Start the safe local demo target:
+
+```powershell
+py labs/demo_server.py
+```
+
+In a second terminal:
+
+```powershell
+py -m routehawk scan --config config.local-lab.yaml --out results.json
+py -m routehawk report --input results.json --out report.md
+py -m routehawk report --input results.json --out report.html
+```
+
+This flow is for local, authorized, low-impact validation of RouteHawk behavior.
+
 ## Dashboard
 
 Start the safe demo target:
@@ -45,6 +69,7 @@ Historical runs include their own `diff.json` link in the scan history panel.
 The compare panel also supports selecting any two runs and rendering a detailed endpoint-level drilldown.
 The run compare drilldown separates `new`, `removed`, and `changed` endpoints so review queues stay readable.
 Changed endpoints include explicit deltas for risk score, extraction confidence, tags, and sources when those values differ between runs.
+Changed endpoints also surface source URL count and risk reason previews for quick triage context.
 
 Finding review buttons in dashboard-generated reports are persisted locally in:
 
@@ -118,6 +143,10 @@ Compare and history commands:
 py -m routehawk compare --base previous-results.json --head current-results.json --out diff.md
 py -m routehawk history --workspace . --limit 10
 ```
+
+## Safety Notes
+
+RouteHawk is not an exploit tool or payload scanner. Keep usage within authorized scope, with low-impact request settings and manual review workflow goals.
 
 ## Tests
 

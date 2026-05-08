@@ -12,6 +12,17 @@ RouteHawk is not an exploit scanner. It is a review workflow for authorized secu
 - generate manual review tasks with evidence and checklists
 - preserve run history, diffs, triage state, and reports locally
 
+## Primary User Value
+
+When a reviewer has many raw routes, RouteHawk should answer:
+
+- which endpoints are new vs already known
+- which routes changed risk or confidence between runs
+- why an endpoint is prioritized
+- what to test manually next
+
+The product should reduce review noise and increase evidence quality, not increase request aggressiveness.
+
 ## Differentiation
 
 Existing tools commonly focus on one layer:
@@ -22,6 +33,13 @@ Existing tools commonly focus on one layer:
 - subdomain or probe imports
 
 RouteHawk should sit after or beside those tools. Its job is to turn their output plus its own collectors into a local review workspace.
+
+## Product UX Priorities
+
+- Fast local setup for a safe demo and repeatable scans
+- Clear “does vs does not do” safety messaging
+- Endpoint-level compare drilldown for run-to-run changes
+- Reports suitable for manual review notes and handoff
 
 ## Non-Goals
 
@@ -44,3 +62,15 @@ RouteHawk should feel complete when a user can:
 - import common recon output
 - regenerate old reports from local history
 - export clean Markdown/HTML evidence for manual work
+
+## Story To Communicate On GitHub
+
+RouteHawk is a local-first endpoint intelligence workspace for authorized security review:
+
+- collect
+- normalize
+- prioritize
+- compare
+- document manual review tasks
+
+without crossing into exploitation or destructive behavior.
