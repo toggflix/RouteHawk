@@ -21,6 +21,8 @@
 - Configurable endpoint suppression rules for suffix, path prefix, and regex noise.
 - Dashboard scan success/error banners.
 - Risk-sorted dashboard diff previews with visible item limits.
+- Dashboard run-compare panel for selecting any two historical scans.
+- CLI snapshot diff command: `routehawk compare --base ... --head ...`.
 
 ### Safety
 

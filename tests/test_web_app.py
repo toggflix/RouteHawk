@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 from routehawk.core.models import Endpoint, Finding, ScanResult
 from routehawk.reports.html import render_html
 from routehawk.storage.sqlite import record_scan
+from routehawk.web_app import _compare_panel
 from routehawk.web_app import _diff_panel
 from routehawk.web_app import _history_panel
 from routehawk.web_app import _scan_result_from_payload
@@ -172,7 +173,7 @@ class WebAppTests(unittest.TestCase):
             record_scan(app.database_path, metadata, {"endpoints": []}, {"new_count": 2})
 
             runs = app._recent_runs()
-            html = _history_panel(runs)
+            html = _history_panel(runs, latest_run_id="20260507-120001")
 
             self.assertEqual(runs[0]["source"], "sqlite")
             self.assertIn("source sqlite", html)
@@ -181,6 +182,7 @@ class WebAppTests(unittest.TestCase):
             self.assertIn("/db/runs/20260507-120000/report.md", html)
             self.assertIn("/db/runs/20260507-120000/results.json", html)
             self.assertIn("/db/runs/20260507-120000/diff.json", html)
+            self.assertIn("Compare vs Latest", html)
 
     def test_file_history_keeps_file_links(self):
         html = _history_panel(
@@ -198,6 +200,77 @@ class WebAppTests(unittest.TestCase):
 
         self.assertIn("/runs/20260507-120000/results.json", html)
         self.assertIn("/runs/20260507-120000/diff.json", html)
+
+    def test_compare_panel_renders_form_and_diff(self):
+        runs = [
+            {"run_id": "20260507-120002", "target": "http://localhost:8088", "generated_at": "t2"},
+            {"run_id": "20260507-120001", "target": "http://localhost:8088", "generated_at": "t1"},
+        ]
+        compare = {
+            "base": "20260507-120001",
+            "head": "20260507-120002",
+            "diff": {"new_count": 0, "removed_count": 0, "changed_count": 0, "unchanged_count": 0, "new": [], "removed": [], "changed": []},
+            "error": "",
+        }
+
+        html = _compare_panel(runs, compare)
+
+        self.assertIn("Compare runs", html)
+        self.assertIn('name="base"', html)
+        self.assertIn('name="head"', html)
+        self.assertIn("New endpoints", html)
+
+    def test_compare_context_builds_diff_for_known_runs(self):
+        with TemporaryDirectory() as temporary:
+            app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
+            record_scan(
+                app.database_path,
+                {
+                    "run_id": "20260507-120001",
+                    "generated_at": "2026-05-07T12:00:01Z",
+                    "target": "http://localhost:8088",
+                    "scope": ["localhost"],
+                    "assets": 1,
+                    "javascript_files": 1,
+                    "metadata": 5,
+                    "endpoints": 1,
+                    "findings": 0,
+                    "high_risk": 0,
+                    "medium_risk": 0,
+                    "new_endpoints": 0,
+                    "removed_endpoints": 0,
+                    "changed_endpoints": 0,
+                },
+                {"endpoints": [{"method": "GET", "normalized_path": "/api/a"}]},
+                {"new_count": 0},
+            )
+            record_scan(
+                app.database_path,
+                {
+                    "run_id": "20260507-120002",
+                    "generated_at": "2026-05-07T12:00:02Z",
+                    "target": "http://localhost:8088",
+                    "scope": ["localhost"],
+                    "assets": 1,
+                    "javascript_files": 1,
+                    "metadata": 5,
+                    "endpoints": 2,
+                    "findings": 0,
+                    "high_risk": 0,
+                    "medium_risk": 0,
+                    "new_endpoints": 0,
+                    "removed_endpoints": 0,
+                    "changed_endpoints": 0,
+                },
+                {"endpoints": [{"method": "GET", "normalized_path": "/api/a"}, {"method": "GET", "normalized_path": "/api/b"}]},
+                {"new_count": 0},
+            )
+
+            runs = app._recent_runs()
+            context = app._build_compare_context({"base": ["20260507-120001"], "head": ["20260507-120002"]}, runs)
+
+            self.assertEqual(context["error"], "")
+            self.assertEqual(context["diff"]["new_count"], 1)
 
     def test_rebuilds_scan_result_from_json_payload(self):
         result = _scan_result_from_payload(

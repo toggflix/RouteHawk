@@ -1,6 +1,6 @@
 # RouteHawk Project State
 
-Last updated: 2026-05-07
+Last updated: 2026-05-08
 
 ## Project
 
@@ -75,6 +75,13 @@ py -m routehawk report --input results.json --out report.html
 py -m routehawk report --input results.json --out report.md
 ```
 
+Compare two saved scan snapshots:
+
+```powershell
+py -m routehawk compare --base previous-results.json --head current-results.json --out diff.json
+py -m routehawk compare --base previous-results.json --head current-results.json --out diff.md
+```
+
 ## Current Features
 
 CLI:
@@ -83,6 +90,7 @@ CLI:
 - `routehawk extract-js`
 - `routehawk report`
 - `routehawk import-file`
+- `routehawk compare`
 - `routehawk serve`
 
 Core:
@@ -154,6 +162,7 @@ Dashboard:
 - dashboard metrics and history links for scan diffs
 - dashboard diff panel for new, removed, and changed endpoint summaries
 - risk-sorted diff preview with visible item counts
+- run compare form for any two historical runs
 - persistent triage storage in `.routehawk\triage.json`
 - scan metadata persisted to `.routehawk\routehawk.sqlite`
 
@@ -176,7 +185,7 @@ Demo lab:
 Latest test command passed:
 
 ```text
-57 tests passed
+62 tests passed
 ```
 
 Latest compile check passed:
@@ -234,7 +243,7 @@ High priority:
 
 Medium priority:
 
-- Add route group clustering.
+- Expand compare panel details with per-endpoint drilldown pages.
 
 Security wording:
 

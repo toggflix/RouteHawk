@@ -199,9 +199,13 @@ class RouteHawkWebApp:
     def _dashboard(self, query: Optional[Dict[str, list]] = None) -> str:
         summary, error = self._read_summary()
         diff = self._read_latest_diff()
+        runs = self._recent_runs()
+        latest_run_id = str(runs[0].get("run_id", "")) if runs else ""
+        compare = self._build_compare_context(query or {}, runs)
         last_run = _last_run_panel(summary, error)
         diff_panel = _diff_panel(diff)
-        history = _history_panel(self._recent_runs())
+        compare_panel = _compare_panel(runs, compare)
+        history = _history_panel(runs, latest_run_id)
         target_value = escape(summary.get("target", "http://localhost:8088") if summary else "http://localhost:8088")
         scope_value = escape(", ".join(summary.get("scope", ["localhost"])) if summary else "localhost")
         status_banner = _status_banner(query or {}, summary, error)
@@ -319,6 +323,32 @@ class RouteHawkWebApp:
     }}
     .diff-column h3 {{ margin: 0 0 8px; font-size: 15px; }}
     .diff-list {{ display: grid; gap: 8px; }}
+    .compare-form {{
+      display: grid;
+      grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
+      gap: 10px;
+      align-items: end;
+      margin-bottom: 12px;
+    }}
+    .compare-form label {{ font-size: 12px; color: var(--muted); }}
+    .compare-form select {{
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      background: #fff;
+    }}
+    .compare-form button {{
+      width: auto;
+      min-width: 140px;
+      border-radius: 6px;
+      padding: 8px 10px;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+    }}
     .diff-item {{
       border-top: 1px solid var(--line);
       padding-top: 8px;
@@ -364,6 +394,10 @@ class RouteHawkWebApp:
     <section class="panel" style="margin-top: 18px;">
       <h2>Latest Diff</h2>
       {diff_panel}
+    </section>
+    <section class="panel" style="margin-top: 18px;">
+      <h2>Run Compare</h2>
+      {compare_panel}
     </section>
     <section class="panel" style="margin-top: 18px;">
       <h2>Scan History</h2>
@@ -503,6 +537,38 @@ class RouteHawkWebApp:
             if len(runs) >= 8:
                 break
         return runs
+
+    def _build_compare_context(self, query: Dict[str, list], runs: list) -> Dict[str, object]:
+        base = _form_value(query, "base")
+        head = _form_value(query, "head")
+        if not base or not head:
+            return {"base": base, "head": head, "diff": None, "error": ""}
+        if not _safe_run_id(base) or not _safe_run_id(head):
+            return {"base": base, "head": head, "diff": None, "error": "Invalid run id."}
+        if base == head:
+            return {"base": base, "head": head, "diff": None, "error": "Base and head runs must differ."}
+        available = {str(run.get("run_id", "")) for run in runs}
+        if base not in available or head not in available:
+            return {"base": base, "head": head, "diff": None, "error": "Selected runs not available in history."}
+
+        base_payload = self._payload_for_run(base)
+        head_payload = self._payload_for_run(head)
+        if base_payload is None or head_payload is None:
+            return {"base": base, "head": head, "diff": None, "error": "Run payload missing for comparison."}
+        return {"base": base, "head": head, "diff": build_endpoint_diff(base_payload, head_payload), "error": ""}
+
+    def _payload_for_run(self, run_id: str) -> Optional[Dict[str, object]]:
+        payload = fetch_scan_payload(self.database_path, run_id, "result_json")
+        if payload is not None:
+            return payload
+        path = self.runs_root / run_id / "results.json"
+        if not path.exists():
+            return None
+        try:
+            loaded = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return None
+        return loaded if isinstance(loaded, dict) else None
 
     def _write_run_files(
         self,
@@ -813,7 +879,52 @@ def _safe_int(value: object) -> int:
         return 0
 
 
-def _history_panel(runs: list) -> str:
+def _compare_panel(runs: list, compare: Dict[str, object]) -> str:
+    if len(runs) < 2:
+        return '<p class="hint">At least two scans are required for comparison.</p>'
+
+    base = str(compare.get("base", ""))
+    head = str(compare.get("head", ""))
+    options = []
+    for run in runs[:20]:
+        run_id = str(run.get("run_id", ""))
+        target = str(run.get("target", "unknown"))
+        generated = str(run.get("generated_at", "unknown"))
+        label = f"{run_id} | {target} | {generated}"
+        options.append((run_id, label))
+    if not base:
+        base = options[1][0] if len(options) > 1 else options[0][0]
+    if not head:
+        head = options[0][0]
+
+    base_options = "".join(
+        f'<option value="{escape(run_id, quote=True)}"{" selected" if run_id == base else ""}>{escape(label)}</option>'
+        for run_id, label in options
+    )
+    head_options = "".join(
+        f'<option value="{escape(run_id, quote=True)}"{" selected" if run_id == head else ""}>{escape(label)}</option>'
+        for run_id, label in options
+    )
+    diff = compare.get("diff")
+    error = str(compare.get("error", ""))
+    diff_block = (
+        f'<div class="notice error"><strong>Compare failed</strong><span>{escape(error)}</span></div>'
+        if error
+        else _diff_panel(diff) if isinstance(diff, dict) else '<p class="hint">Select two runs and compare.</p>'
+    )
+    return (
+        '<form class="compare-form" method="get" action="/">'
+        '<div><label for="base-run">Base run</label>'
+        f'<select id="base-run" name="base">{base_options}</select></div>'
+        '<div><label for="head-run">Head run</label>'
+        f'<select id="head-run" name="head">{head_options}</select></div>'
+        '<div><button type="submit">Compare runs</button></div>'
+        "</form>"
+        + diff_block
+    )
+
+
+def _history_panel(runs: list, latest_run_id: str = "") -> str:
     if not runs:
         return '<p class="hint">No historical dashboard scans yet.</p>'
 
@@ -833,6 +944,7 @@ def _history_panel(runs: list) -> str:
         if not run_id:
             continue
         base_href = f"/db/runs/{run_id}" if source_value == "sqlite" else f"/runs/{run_id}"
+        compare_href = f"/?base={run_id}&head={latest_run_id}" if latest_run_id and run_id != latest_run_id else ""
         items.append(
             f"""
             <div class="history-item">
@@ -843,6 +955,7 @@ def _history_panel(runs: list) -> str:
                 <a href="{base_href}/report.md">Markdown</a>
                 <a href="{base_href}/results.json">JSON</a>
                 <a href="{base_href}/diff.json">Diff</a>
+                {_compare_link(compare_href)}
               </div>
             </div>
             """
@@ -873,3 +986,10 @@ def _scan_result_from_payload(payload: Dict[str, object]) -> ScanResult:
 
 def _dict_items(value: object) -> list:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _compare_link(href: str) -> str:
+    if not href:
+        return ""
+    safe_href = escape(href, quote=True)
+    return f'<a href="{safe_href}">Compare vs Latest</a>'

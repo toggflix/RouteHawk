@@ -125,6 +125,13 @@ py -m routehawk import-file --type nuclei --input nuclei.jsonl --out imported-nu
 py -m routehawk import-file --type nmap --input nmap.xml --out imported-nmap.json
 ```
 
+Compare two RouteHawk result snapshots:
+
+```powershell
+py -m routehawk compare --base previous-results.json --head current-results.json --out diff.json
+py -m routehawk compare --base previous-results.json --head current-results.json --out diff.md
+```
+
 RouteHawk merges duplicate normalized routes across sources. For example, a billing endpoint found in JavaScript, sitemap.xml, and OpenAPI is reported once with combined evidence and source coverage.
 
 Current reports also include:

@@ -24,6 +24,7 @@
 - SQLite-backed result and diff retrieval endpoints
 - SQLite-backed HTML/Markdown report regeneration
 - Importers: httpx, subfinder, nuclei, nmap
+- CLI result comparison (`routehawk compare`)
 - Security headers and CORS summaries
 - Optional auth behavior analyzer
 - Demo report artifacts under `examples/`

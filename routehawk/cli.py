@@ -31,6 +31,7 @@ from routehawk.collectors.robots import parse_robots_txt
 from routehawk.collectors.security_txt import parse_security_txt
 from routehawk.collectors.sitemap import parse_sitemap_xml
 from routehawk.core.config import load_config
+from routehawk.core.diff import build_endpoint_diff
 from routehawk.core.http_client import ScopeSafeHttpClient
 from routehawk.core.models import (
     Asset,
@@ -86,6 +87,11 @@ def build_parser() -> argparse.ArgumentParser:
     import_file.add_argument("--input", required=True, help="Input file path.")
     import_file.add_argument("--out", help="Optional JSON output path.")
 
+    compare = subparsers.add_parser("compare", help="Compare two RouteHawk result JSON files.")
+    compare.add_argument("--base", required=True, help="Base (older) RouteHawk result JSON path.")
+    compare.add_argument("--head", required=True, help="Head (newer) RouteHawk result JSON path.")
+    compare.add_argument("--out", help="Optional output path. Supports .json and .md.")
+
     serve = subparsers.add_parser("serve", help="Run the local RouteHawk dashboard.")
     serve.add_argument("--host", default="127.0.0.1", help="Dashboard bind host.")
     serve.add_argument("--port", type=int, default=8090, help="Dashboard port.")
@@ -106,6 +112,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         return _report(args)
     if args.command == "import-file":
         return _import_file(args)
+    if args.command == "compare":
+        return _compare(args)
     if args.command == "serve":
         return _serve(args)
 
@@ -666,6 +674,103 @@ def _import_file(args: argparse.Namespace) -> int:
     else:
         print(output)
     return 0
+
+
+def _compare(args: argparse.Namespace) -> int:
+    base_payload = _load_result_payload(Path(args.base))
+    head_payload = _load_result_payload(Path(args.head))
+    diff = build_endpoint_diff(base_payload, head_payload)
+    output = {
+        "base": str(Path(args.base)),
+        "head": str(Path(args.head)),
+        "summary": {
+            "new_count": diff["new_count"],
+            "removed_count": diff["removed_count"],
+            "changed_count": diff["changed_count"],
+            "unchanged_count": diff["unchanged_count"],
+        },
+        "diff": diff,
+    }
+    if args.out:
+        path = Path(args.out)
+        if path.suffix.lower() == ".md":
+            path.write_text(_render_diff_markdown(output), encoding="utf-8")
+        else:
+            path.write_text(json.dumps(output, indent=2), encoding="utf-8")
+    else:
+        print(json.dumps(output, indent=2))
+    return 0
+
+
+def _load_result_payload(path: Path) -> dict:
+    if not path.exists():
+        raise SystemExit(f"File not found: {path}")
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"Invalid JSON file: {path} ({exc})") from exc
+    if not isinstance(loaded, dict):
+        raise SystemExit(f"Expected JSON object in file: {path}")
+    if not isinstance(loaded.get("endpoints", []), list):
+        raise SystemExit(f"Expected endpoints array in file: {path}")
+    return loaded
+
+
+def _render_diff_markdown(payload: dict) -> str:
+    diff = payload["diff"]
+    lines = [
+        "# RouteHawk Diff Report",
+        "",
+        f"Base: `{payload['base']}`",
+        f"Head: `{payload['head']}`",
+        "",
+        "## Summary",
+        "",
+        f"- New endpoints: {diff['new_count']}",
+        f"- Removed endpoints: {diff['removed_count']}",
+        f"- Changed endpoints: {diff['changed_count']}",
+        f"- Unchanged endpoints: {diff['unchanged_count']}",
+        "",
+    ]
+    lines.extend(_diff_markdown_section("New endpoints", diff.get("new", [])))
+    lines.extend(_diff_markdown_section("Removed endpoints", diff.get("removed", [])))
+    lines.extend(_diff_changed_markdown_section(diff.get("changed", [])))
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def _diff_markdown_section(title: str, items: object) -> list:
+    rows = [f"## {title}", ""]
+    values = items if isinstance(items, list) else []
+    if not values:
+        rows.append("- None")
+        rows.append("")
+        return rows
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        endpoint = str(item.get("endpoint", "unknown"))
+        risk_score = item.get("risk_score", 0)
+        rows.append(f"- `{endpoint}` (risk: {risk_score})")
+    rows.append("")
+    return rows
+
+
+def _diff_changed_markdown_section(items: object) -> list:
+    rows = ["## Changed endpoints", ""]
+    values = items if isinstance(items, list) else []
+    if not values:
+        rows.append("- None")
+        rows.append("")
+        return rows
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        endpoint = str(item.get("endpoint", "unknown"))
+        previous_score = item.get("previous_risk_score", 0)
+        current_score = item.get("current_risk_score", 0)
+        rows.append(f"- `{endpoint}` (risk: {previous_score} -> {current_score})")
+    rows.append("")
+    return rows
 
 
 def _serve(args: argparse.Namespace) -> int:
