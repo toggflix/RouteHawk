@@ -127,6 +127,7 @@ Analyzers:
 - security header and CORS metadata summaries
 - route group clustering by normalized endpoint prefix
 - regex endpoint extraction
+- JavaScript endpoint extractor hardening against function-expression false positives
 - static asset and CDN-like false-positive suppression during endpoint extraction
 - config-driven suppression for custom suffix, path prefix, and regex noise rules
 - route normalization for ids, UUIDs, hashes, tokens, emails, colon params
@@ -203,7 +204,7 @@ Demo lab:
 Latest test command passed:
 
 ```text
-69 tests passed
+74 tests passed
 ```
 
 Latest compile check passed:
