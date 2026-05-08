@@ -19,6 +19,8 @@
 - Import parsers for httpx JSON, subfinder JSON/plain lines, nuclei JSON, and nmap XML.
 - Safe local demo lab with Python and Docker Compose options.
 - Configurable endpoint suppression rules for suffix, path prefix, and regex noise.
+- Dashboard scan success/error banners.
+- Risk-sorted dashboard diff previews with visible item limits.
 
 ### Safety
 

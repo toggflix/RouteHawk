@@ -28,12 +28,13 @@
 - Optional auth behavior analyzer
 - Demo report artifacts under `examples/`
 - Route group summaries
+- Dashboard scan success/error banners
+- Risk-sorted dashboard diff previews
 
 ## v0.2 Next
 
 - Persistent scan history and triage state
 - Rich scan comparison UI for new, removed, changed endpoints
-- More polished dashboard error states
 - README screenshots or hosted report preview
 
 ## v0.3

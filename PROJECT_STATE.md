@@ -143,6 +143,7 @@ Dashboard:
 - local web dashboard at port 8090
 - target/scope scan form
 - scan submit loading state to prevent accidental double submissions
+- scan success/error feedback banners from query state
 - latest run summary
 - latest HTML/Markdown/JSON links
 - scan history with timestamped run folders
@@ -152,6 +153,7 @@ Dashboard:
 - scan diff JSON for new, removed, and changed endpoint risk scores
 - dashboard metrics and history links for scan diffs
 - dashboard diff panel for new, removed, and changed endpoint summaries
+- risk-sorted diff preview with visible item counts
 - persistent triage storage in `.routehawk\triage.json`
 - scan metadata persisted to `.routehawk\routehawk.sqlite`
 
@@ -174,7 +176,7 @@ Demo lab:
 Latest test command passed:
 
 ```text
-55 tests passed
+57 tests passed
 ```
 
 Latest compile check passed:

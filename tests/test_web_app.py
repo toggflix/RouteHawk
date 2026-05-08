@@ -8,6 +8,7 @@ from routehawk.storage.sqlite import record_scan
 from routehawk.web_app import _diff_panel
 from routehawk.web_app import _history_panel
 from routehawk.web_app import _scan_result_from_payload
+from routehawk.web_app import _status_banner
 from routehawk.web_app import RouteHawkWebApp
 
 
@@ -58,6 +59,27 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("/debug/config", html)
         self.assertIn("risk 55 -> 80", html)
         self.assertIn("Open Diff JSON", html)
+        self.assertIn("Showing 1", html)
+
+    def test_diff_panel_sorts_by_risk_and_limits_visible_items(self):
+        html = _diff_panel(
+            {
+                "new_count": 9,
+                "removed_count": 0,
+                "changed_count": 0,
+                "unchanged_count": 0,
+                "new": [
+                    {"endpoint": f"GET /api/items/{index}", "risk_score": index, "sources": [], "tags": []}
+                    for index in range(9)
+                ],
+                "removed": [],
+                "changed": [],
+            }
+        )
+
+        self.assertIn("Showing 8 of 9", html)
+        self.assertLess(html.index("/api/items/8"), html.index("/api/items/7"))
+        self.assertNotIn("/api/items/0", html)
 
     def test_dashboard_triage_statuses_persist_to_workspace(self):
         with TemporaryDirectory() as temporary:
@@ -118,6 +140,15 @@ class WebAppTests(unittest.TestCase):
             self.assertIn('id="scan-submit"', html)
             self.assertIn('button.disabled = true', html)
             self.assertIn('button.textContent = "Scanning..."', html)
+
+    def test_dashboard_status_banners_render_query_feedback(self):
+        success = _status_banner({"scan": ["complete"]}, {"endpoints": 9, "findings": 8}, "")
+        failure = _status_banner({"error": ["scan-failed"]}, {}, "Target is out of scope")
+
+        self.assertIn("Scan complete", success)
+        self.assertIn("9 endpoints", success)
+        self.assertIn("Action failed", failure)
+        self.assertIn("Target is out of scope", failure)
 
     def test_dashboard_history_uses_sqlite_records(self):
         with TemporaryDirectory() as temporary:

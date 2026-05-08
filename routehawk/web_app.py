@@ -7,7 +7,7 @@ from html import escape
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from routehawk.cli import _result_to_json, _run_scan
@@ -65,9 +65,10 @@ class RouteHawkWebApp:
         return Handler
 
     def handle_get(self, request: BaseHTTPRequestHandler) -> None:
-        path = urlparse(request.path).path
+        parsed_request = urlparse(request.path)
+        path = parsed_request.path
         if path == "/":
-            self._send_html(request, self._dashboard())
+            self._send_html(request, self._dashboard(parse_qs(parsed_request.query)))
             return
         if path == "/reports/latest.html":
             self._send_file(request, self.run_dir / "report.html", "text/html")
@@ -195,7 +196,7 @@ class RouteHawkWebApp:
         }
         (self.run_dir / "summary.json").write_text(json.dumps(error, indent=2), encoding="utf-8")
 
-    def _dashboard(self) -> str:
+    def _dashboard(self, query: Optional[Dict[str, list]] = None) -> str:
         summary, error = self._read_summary()
         diff = self._read_latest_diff()
         last_run = _last_run_panel(summary, error)
@@ -203,6 +204,7 @@ class RouteHawkWebApp:
         history = _history_panel(self._recent_runs())
         target_value = escape(summary.get("target", "http://localhost:8088") if summary else "http://localhost:8088")
         scope_value = escape(", ".join(summary.get("scope", ["localhost"])) if summary else "localhost")
+        status_banner = _status_banner(query or {}, summary, error)
 
         return f"""<!doctype html>
 <html lang="en">
@@ -278,6 +280,16 @@ class RouteHawkWebApp:
       font-weight: 700;
     }}
     .error {{ border-left: 4px solid var(--danger); background: #fff7f7; }}
+    .notice {{
+      border: 1px solid var(--line);
+      border-left: 4px solid var(--accent);
+      border-radius: 8px;
+      background: #fbfcfe;
+      padding: 14px 16px;
+      margin-bottom: 18px;
+    }}
+    .notice.error {{ border-left-color: var(--danger); background: #fff7f7; }}
+    .notice strong {{ display: block; margin-bottom: 4px; }}
     .history-list {{ display: grid; gap: 10px; }}
     .history-item {{
       border: 1px solid var(--line);
@@ -326,6 +338,7 @@ class RouteHawkWebApp:
     <p>Scope-safe API and JavaScript recon assistant for authorized testing.</p>
   </header>
   <main>
+    {status_banner}
     <div class="grid">
       <section class="panel">
         <h2>New Scan</h2>
@@ -625,6 +638,31 @@ def _safe_run_id(value: str) -> bool:
     return bool(value) and all(char.isdigit() or char == "-" for char in value)
 
 
+def _status_banner(query: Dict[str, list], summary: Dict[str, object], error: str) -> str:
+    if "scan" in query and _form_value(query, "scan") == "complete":
+        findings = escape(str(summary.get("findings", 0)))
+        endpoints = escape(str(summary.get("endpoints", 0)))
+        return (
+            '<div class="notice">'
+            "<strong>Scan complete</strong>"
+            f"<span>{endpoints} endpoints normalized, {findings} manual review candidates generated.</span>"
+            "</div>"
+        )
+    error_code = _form_value(query, "error")
+    if error_code:
+        message = {
+            "missing-target-or-scope": "Target URL and scope are required.",
+            "scan-failed": error or "Scan failed. Check the latest run panel for details.",
+        }.get(error_code, "Request failed.")
+        return (
+            '<div class="notice error">'
+            "<strong>Action failed</strong>"
+            f"<span>{escape(message)}</span>"
+            "</div>"
+        )
+    return ""
+
+
 def _last_run_panel(summary: Dict[str, object], error: str) -> str:
     if error:
         return f"""
@@ -698,33 +736,36 @@ def _diff_panel(diff: Dict[str, object]) -> str:
 
 
 def _diff_column(title: str, items: object, empty: str) -> str:
-    rows = []
-    if isinstance(items, list):
-        for item in items[:8]:
-            if isinstance(item, dict):
-                rows.append(_diff_item(item))
-    body = "".join(rows) if rows else f'<p class="hint">{escape(empty)}</p>'
+    item_list = _dict_list(items)
+    sorted_items = sorted(item_list, key=lambda item: _safe_int(item.get("risk_score")), reverse=True)
+    rows = [_diff_item(item) for item in sorted_items[:8]]
+    if rows:
+        body = _diff_count_line(len(rows), len(sorted_items)) + "".join(rows)
+    else:
+        body = f'<p class="hint">{escape(empty)}</p>'
     return f'<div class="diff-column"><h3>{escape(title)}</h3><div class="diff-list">{body}</div></div>'
 
 
 def _diff_changed_column(items: object) -> str:
+    item_list = sorted(
+        _dict_list(items),
+        key=lambda item: _safe_int(item.get("current_risk_score")),
+        reverse=True,
+    )
     rows = []
-    if isinstance(items, list):
-        for item in items[:8]:
-            if not isinstance(item, dict):
-                continue
-            current = item.get("current", {})
-            endpoint = escape(str(item.get("endpoint", "")))
-            previous_score = escape(str(item.get("previous_risk_score", 0)))
-            current_score = escape(str(item.get("current_risk_score", 0)))
-            sources = _diff_sources(current if isinstance(current, dict) else {})
-            rows.append(
-                '<div class="diff-item">'
-                f"<code>{endpoint}</code>"
-                f'<div class="diff-meta">risk {previous_score} -> {current_score} | sources {sources}</div>'
-                "</div>"
-            )
-    body = "".join(rows) if rows else '<p class="hint">No risk score changes.</p>'
+    for item in item_list[:8]:
+        current = item.get("current", {})
+        endpoint = escape(str(item.get("endpoint", "")))
+        previous_score = escape(str(item.get("previous_risk_score", 0)))
+        current_score = escape(str(item.get("current_risk_score", 0)))
+        sources = _diff_sources(current if isinstance(current, dict) else {})
+        rows.append(
+            '<div class="diff-item">'
+            f"<code>{endpoint}</code>"
+            f'<div class="diff-meta">risk {previous_score} -> {current_score} | sources {sources}</div>'
+            "</div>"
+        )
+    body = _diff_count_line(len(rows), len(item_list)) + "".join(rows) if rows else '<p class="hint">No risk score changes.</p>'
     return f'<div class="diff-column"><h3>Changed risk</h3><div class="diff-list">{body}</div></div>'
 
 
@@ -754,6 +795,22 @@ def _diff_tags(item: Dict[str, object]) -> str:
     if not isinstance(tags, list) or not tags:
         return "none"
     return escape(", ".join(str(tag) for tag in tags))
+
+
+def _dict_list(value: object) -> list:
+    return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _diff_count_line(visible: int, total: int) -> str:
+    suffix = f"Showing {visible} of {total}" if visible < total else f"Showing {visible}"
+    return f'<p class="diff-meta">{escape(suffix)}</p>'
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _history_panel(runs: list) -> str:
