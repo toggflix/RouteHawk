@@ -162,6 +162,8 @@ Latest diff output is most meaningful when comparing scans from the same target 
 - Run login-related checks only when program policy allows it, and only with your own authorized accounts.
 - If you encounter sensitive personal, payment, or private data, stop testing and follow the program disclosure process.
 - Programs may define stricter request and rate limits; always follow the specific program policy.
+- `request_budget_per_scan` sets an upper bound for total scan requests; when exceeded, RouteHawk stops early and returns partial results with a warning.
+- Request budgeting does not replace program rate limits or rules; you must still follow the program policy.
 
 Recommended low-impact config:
 

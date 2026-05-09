@@ -34,7 +34,7 @@ from routehawk.collectors.security_txt import parse_security_txt
 from routehawk.collectors.sitemap import parse_sitemap_xml
 from routehawk.core.config import load_config
 from routehawk.core.diff import build_endpoint_diff
-from routehawk.core.http_client import ScopeSafeHttpClient
+from routehawk.core.http_client import RequestBudgetExceeded, ScopeSafeHttpClient
 from routehawk.core.models import (
     Asset,
     Endpoint,
@@ -193,10 +193,10 @@ async def _run_scan(
     options = config.scan if config else ScanOptions()
     rules, options = _apply_safe_profile(rules, options, safe_profile)
     suppression = config.suppression if config else SuppressionConfig()
-    # TODO: enforce rules.request_budget_per_scan in the HTTP request execution path.
     client = ScopeSafeHttpClient(validator, rules)
     result = ScanResult(target=target, scope=scope_domains)
     root_url = _origin(target)
+    budget_exceeded = False
 
     try:
         html = ""
@@ -214,48 +214,61 @@ async def _run_scan(
                 )
             )
             result.metadata.extend(_header_metadata(response.url, response.status_code, response.headers))
+        except RequestBudgetExceeded:
+            _append_budget_warning(result)
+            return result
         except Exception as exc:
             result.warnings.append(f"Target fetch failed for {target}: {exc}")
             return result
 
-        if html and options.download_javascript:
-            javascript_urls = extract_javascript_assets(target, html, validator)
-            for javascript_url in javascript_urls:
-                try:
-                    cached = await download_javascript(
-                        client,
-                        javascript_url,
-                        Path(".cache") / "javascript",
+        try:
+            if html and options.download_javascript:
+                javascript_urls = extract_javascript_assets(target, html, validator)
+                for javascript_url in javascript_urls:
+                    try:
+                        cached = await download_javascript(
+                            client,
+                            javascript_url,
+                            Path(".cache") / "javascript",
+                        )
+                        javascript_text = cached.path.read_text(encoding="utf-8", errors="ignore")
+                    except RequestBudgetExceeded:
+                        raise
+                    except Exception as exc:
+                        result.warnings.append(f"JavaScript fetch failed for {javascript_url}: {exc}")
+                        continue
+                    endpoints = _endpoints_from_text(javascript_text, "javascript", javascript_url, suppression)
+                    result.javascript_files.append(
+                        JavaScriptFile(
+                            url=javascript_url,
+                            sha256=cached.sha256,
+                            cache_path=str(cached.path),
+                            size=cached.size,
+                            endpoints_found=len(endpoints),
+                        )
                     )
-                    javascript_text = cached.path.read_text(encoding="utf-8", errors="ignore")
-                except Exception as exc:
-                    result.warnings.append(f"JavaScript fetch failed for {javascript_url}: {exc}")
-                    continue
-                endpoints = _endpoints_from_text(javascript_text, "javascript", javascript_url, suppression)
-                result.javascript_files.append(
-                    JavaScriptFile(
-                        url=javascript_url,
-                        sha256=cached.sha256,
-                        cache_path=str(cached.path),
-                        size=cached.size,
-                        endpoints_found=len(endpoints),
-                    )
-                )
-                result.endpoints.extend(endpoints)
+                    result.endpoints.extend(endpoints)
 
-        if options.parse_robots:
-            await _collect_robots(client, root_url, result, validator, suppression)
-        if options.parse_sitemap:
-            await _collect_sitemap(client, root_url, result, validator, suppression)
-        if options.parse_openapi:
-            await _collect_openapi(client, root_url, result)
-        if options.check_common_metadata:
-            await _collect_security_txt(client, root_url, result)
-            await _collect_graphql(client, root_url, result, suppression)
+            if options.parse_robots:
+                await _collect_robots(client, root_url, result, validator, suppression)
+            if options.parse_sitemap:
+                await _collect_sitemap(client, root_url, result, validator, suppression)
+            if options.parse_openapi:
+                await _collect_openapi(client, root_url, result)
+            if options.check_common_metadata:
+                await _collect_security_txt(client, root_url, result)
+                await _collect_graphql(client, root_url, result, suppression)
+        except RequestBudgetExceeded:
+            budget_exceeded = True
 
         result.endpoints = _dedupe_endpoints(result.endpoints)
-        if options.check_auth_behavior:
-            await _collect_auth_behavior(client, root_url, result, options.auth_probe_limit)
+        if options.check_auth_behavior and not budget_exceeded:
+            try:
+                await _collect_auth_behavior(client, root_url, result, options.auth_probe_limit)
+            except RequestBudgetExceeded:
+                budget_exceeded = True
+        if budget_exceeded:
+            _append_budget_warning(result)
         result.findings = _findings_from_endpoints(target, result.endpoints)
         return result
     finally:
@@ -272,6 +285,8 @@ async def _collect_robots(
     robots_url = urljoin(root_url, "/robots.txt")
     try:
         response = await client.get_text(robots_url)
+    except RequestBudgetExceeded:
+        raise
     except Exception as exc:
         result.warnings.append(f"robots.txt fetch failed for {robots_url}: {exc}")
         return
@@ -302,6 +317,8 @@ async def _collect_sitemap(
     sitemap_url = urljoin(root_url, "/sitemap.xml")
     try:
         response = await client.get_text(sitemap_url)
+    except RequestBudgetExceeded:
+        raise
     except Exception as exc:
         result.warnings.append(f"sitemap.xml fetch failed for {sitemap_url}: {exc}")
         return
@@ -334,6 +351,8 @@ async def _collect_openapi(
         spec_url = urljoin(root_url, path)
         try:
             response = await client.get_text(spec_url)
+        except RequestBudgetExceeded:
+            raise
         except Exception as exc:
             result.warnings.append(f"OpenAPI fetch failed for {spec_url}: {exc}")
             continue
@@ -363,6 +382,8 @@ async def _collect_security_txt(
     security_url = urljoin(root_url, "/.well-known/security.txt")
     try:
         response = await client.get_text(security_url)
+    except RequestBudgetExceeded:
+        raise
     except Exception as exc:
         result.warnings.append(f"security.txt fetch failed for {security_url}: {exc}")
         return
@@ -398,6 +419,8 @@ async def _collect_graphql(
             get_response = await client.get_text(url)
             get_status = get_response.status_code
             response_hint = response_hint or looks_like_graphql_response(get_response.text)
+        except RequestBudgetExceeded:
+            raise
         except Exception as exc:
             result.warnings.append(f"GraphQL GET probe failed for {url}: {exc}")
 
@@ -405,6 +428,8 @@ async def _collect_graphql(
             post_response = await client.post_text(url, "{}")
             post_status = post_response.status_code
             response_hint = response_hint or looks_like_graphql_response(post_response.text)
+        except RequestBudgetExceeded:
+            raise
         except Exception as exc:
             result.warnings.append(f"GraphQL POST probe failed for {url}: {exc}")
 
@@ -458,6 +483,8 @@ async def _collect_auth_behavior(
         url = urljoin(root_url, raw_path)
         try:
             response = await client.request_text("HEAD", url)
+        except RequestBudgetExceeded:
+            raise
         except Exception as exc:
             result.warnings.append(f"Auth behavior HEAD probe failed for {url}: {exc}")
             continue
@@ -991,6 +1018,12 @@ def _max_extraction_confidence(left: str, right: str) -> str:
     normalized_left = _normalize_extraction_confidence(left)
     normalized_right = _normalize_extraction_confidence(right)
     return normalized_left if rank[normalized_left] >= rank[normalized_right] else normalized_right
+
+
+def _append_budget_warning(result: ScanResult) -> None:
+    message = "Request budget exceeded; scan stopped early."
+    if message not in result.warnings:
+        result.warnings.append(message)
 
 
 def _apply_safe_profile(

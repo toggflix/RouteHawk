@@ -108,6 +108,7 @@ Core:
 - scope validator with exact and wildcard domain handling
 - scope-safe async HTTP client
 - polite request scheduling (max RPS per host + max concurrency)
+- request budget enforcement per scan (`request_budget_per_scan`)
 - bounded retries with exponential backoff and optional Retry-After support
 - out-of-scope redirect rejection
 
@@ -190,7 +191,7 @@ Docs/demo:
 - examples/README clarifies demo artifact purpose for output shape review
 - bug bounty safe usage guidance added across README and docs/USAGE
 - optional safe profile and low-impact defaults documented
-- request budget config support added (`request_budget_per_scan`, enforcement TODO)
+- request budget enforcement added; budget-exceeded scans return partial results with warning
 
 Automation:
 

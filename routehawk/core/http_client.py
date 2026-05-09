@@ -18,6 +18,10 @@ RETRYABLE_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
 IDEMPOTENT_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 
+class RequestBudgetExceeded(RuntimeError):
+    """Raised when the configured per-scan request budget is exceeded."""
+
+
 @dataclass
 class HttpResponse:
     url: str
@@ -36,6 +40,7 @@ class ScopeSafeHttpClient:
         self._semaphore = asyncio.Semaphore(max(1, int(self.rules.max_concurrency)))
         self._rate_lock = asyncio.Lock()
         self._next_request_at: Dict[str, float] = {}
+        self._request_count = 0
 
     async def get_text(self, url: str) -> HttpResponse:
         return await self.request_text("GET", url)
@@ -49,6 +54,7 @@ class ScopeSafeHttpClient:
         attempts = max(0, int(self.rules.max_retries)) + 1
 
         for attempt in range(attempts):
+            self._consume_request_budget()
             await self._respect_host_rate_limit(url)
             try:
                 response = await self._send_request(normalized_method, url, body=body)
@@ -165,3 +171,12 @@ class ScopeSafeHttpClient:
             parsed = parsed.replace(tzinfo=timezone.utc)
         now = datetime.now(timezone.utc)
         return max(0.0, (parsed - now).total_seconds())
+
+    def _consume_request_budget(self) -> None:
+        budget = int(self.rules.request_budget_per_scan)
+        if budget <= 0:
+            self._request_count += 1
+            return
+        if self._request_count >= budget:
+            raise RequestBudgetExceeded("Request budget exceeded for this scan")
+        self._request_count += 1

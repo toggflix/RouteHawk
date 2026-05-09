@@ -1,7 +1,10 @@
 import unittest
 
-from routehawk.cli import _apply_safe_profile, build_parser
+import routehawk.cli as cli_module
+from routehawk.cli import _apply_safe_profile, _run_scan, build_parser
+from routehawk.core.http_client import RequestBudgetExceeded
 from routehawk.core.models import RulesConfig, ScanOptions
+from routehawk.core.scope import ScopeValidator
 
 
 class CliTests(unittest.TestCase):
@@ -52,6 +55,39 @@ class CliTests(unittest.TestCase):
         text = parser.format_help()
         self.assertIn("authorized, low-impact reconnaissance", text)
         self.assertIn("scan", text)
+
+
+class _BudgetStopClient:
+    def __init__(self, scope, rules):
+        self.scope = scope
+        self.rules = rules
+
+    async def get_text(self, url):
+        raise RequestBudgetExceeded("Request budget exceeded for this scan")
+
+    async def aclose(self):
+        return None
+
+
+class CliBudgetTests(unittest.IsolatedAsyncioTestCase):
+    async def test_budget_exceeded_scan_returns_controlled_warning(self):
+        original_client = cli_module.ScopeSafeHttpClient
+        cli_module.ScopeSafeHttpClient = _BudgetStopClient
+        try:
+            validator = ScopeValidator(["example.com"])
+            result = await _run_scan(
+                "https://example.com",
+                ["example.com"],
+                validator,
+                config=None,
+                safe_profile="bug-bounty",
+            )
+        finally:
+            cli_module.ScopeSafeHttpClient = original_client
+
+        self.assertEqual(result.target, "https://example.com")
+        self.assertIn("Request budget exceeded; scan stopped early.", result.warnings)
+        self.assertEqual(len([w for w in result.warnings if "Request budget exceeded" in w]), 1)
 
 
 if __name__ == "__main__":
