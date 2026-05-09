@@ -91,6 +91,13 @@ class EndpointExtractorTests(unittest.TestCase):
         "/login"
         "/account/settings"
         "/api/v1/products/{id}"
+        "/tr/login"
+        "/tr/account/settings"
+        "/tr/payment/{id}"
+        "/tr/blog/{id}"
+        "/xml/export/{id}"
+        "/xml/feed"
+        "/api/xml/report/{id}"
         """
 
         paths = unique_paths(extract_endpoints(text))
@@ -107,6 +114,13 @@ class EndpointExtractorTests(unittest.TestCase):
         self.assertIn("/login", paths)
         self.assertIn("/account/settings", paths)
         self.assertIn("/api/v1/products/{id}", paths)
+        self.assertIn("/tr/login", paths)
+        self.assertIn("/tr/account/settings", paths)
+        self.assertIn("/tr/payment/{id}", paths)
+        self.assertIn("/tr/blog/{id}", paths)
+        self.assertIn("/xml/export/{id}", paths)
+        self.assertIn("/xml/feed", paths)
+        self.assertIn("/api/xml/report/{id}", paths)
 
     def test_sets_medium_confidence_for_clean_non_method_paths(self):
         endpoints = extract_endpoints('"/api/users/123/billing"')

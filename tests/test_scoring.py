@@ -80,6 +80,7 @@ class ScoringTests(unittest.TestCase):
     def test_classifies_documentation_repository_and_vendor_paths_as_low_relevance(self):
         examples = [
             "/TR/{id}/REC-css3-selectors-20110929/",
+            "/XML/{id}/namespace",
             "/Microsoft/TypeScript/issues/{id}",
             "/youtubei/v1/live_chat/{token}",
             "/krzysu/flot.tooltip",
@@ -89,6 +90,18 @@ class ScoringTests(unittest.TestCase):
             relevance, reasons = classify_app_relevance("GET", path, sources=["javascript"], tags=[])
             self.assertEqual(relevance, "low")
             self.assertTrue(reasons)
+
+    def test_locale_and_xml_application_routes_are_not_low_relevance(self):
+        examples = [
+            "/tr/login",
+            "/tr/payment/{id}",
+            "/xml/export/{id}",
+        ]
+
+        for path in examples:
+            tags = classify_endpoint("GET", path)
+            relevance, _ = classify_app_relevance("GET", path, sources=["javascript"], tags=tags)
+            self.assertIn(relevance, {"medium", "high"})
 
     def test_low_relevance_endpoint_does_not_create_finding(self):
         endpoint = Endpoint(

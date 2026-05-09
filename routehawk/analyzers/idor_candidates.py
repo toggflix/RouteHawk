@@ -174,11 +174,15 @@ def max_app_relevance(left: str, right: str) -> str:
 def _low_relevance_reasons(lowered_path: str) -> list[str]:
     path_only = lowered_path.split("?", 1)[0].split("#", 1)[0]
     reasons = []
-    if path_only.startswith(("/tr/", "/xml/", "/consortium/legal/")) or any(
+    if re.match(r"^/xml/[^/]+/namespace/?$", path_only) or path_only.startswith("/consortium/legal/") or any(
         token in path_only
         for token in (
+            "rec-",
+            "wd-",
+            "dom-level",
             "rec-css3-selectors",
             "wd-dom-level",
+            "css3-selectors",
             "ecma-script-binding.html",
             "copyright-software-and-document",
         )

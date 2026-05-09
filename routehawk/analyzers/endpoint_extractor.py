@@ -51,17 +51,18 @@ IGNORED_PATH_PREFIXES = (
     "/static/",
     "/vendor/",
 )
-W3C_DOCUMENTATION_PREFIXES = (
-    "/tr/",
-    "/xml/",
-    "/consortium/legal/",
-)
+W3C_DOCUMENTATION_PREFIXES = ("/consortium/legal/",)
 DOCUMENTATION_TOKENS = (
+    "rec-",
+    "wd-",
+    "dom-level",
     "rec-css3-selectors",
     "wd-dom-level",
+    "css3-selectors",
     "ecma-script-binding.html",
     "copyright-software-and-document",
 )
+XML_NAMESPACE_DOCUMENTATION_RE = re.compile(r"^/xml/[^/]+/namespace/?$")
 KNOWN_REPOSITORY_REFERENCE_OWNERS = {
     "microsoft",
     "twbs",
@@ -235,6 +236,8 @@ def _looks_like_js_expression_noise(path: str, lowered: str) -> bool:
 
 def _looks_like_third_party_documentation_noise(path: str, lowered: str) -> bool:
     path_only = lowered.split("?", 1)[0].split("#", 1)[0]
+    if XML_NAMESPACE_DOCUMENTATION_RE.match(path_only):
+        return True
     if path_only.startswith(W3C_DOCUMENTATION_PREFIXES):
         return True
     return any(token in path_only for token in DOCUMENTATION_TOKENS)
