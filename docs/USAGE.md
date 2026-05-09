@@ -71,6 +71,15 @@ The run compare drilldown separates `new`, `removed`, and `changed` endpoints so
 Changed endpoints include explicit deltas for risk score, extraction confidence, tags, and sources when those values differ between runs.
 Changed endpoints also surface source URL count and risk reason previews for quick triage context.
 
+Dashboard endpoint filters can narrow latest diff and compare views by:
+
+- app relevance: all, high, medium, low, or hide low
+- extraction confidence: all, high, medium, or low
+- source: javascript, openapi, robots, sitemap, graphql, or security.txt
+- manual candidates only
+
+Low relevance endpoints are visually muted. Filters are client-side and do not change stored scan results.
+
 Finding review buttons in dashboard-generated reports are persisted locally in:
 
 ```text

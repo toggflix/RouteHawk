@@ -1,64 +1,54 @@
 # RouteHawk Roadmap
 
-## v0.1 Current MVP
+## v0.2-alpha Release Readiness
 
-- Scope-safe CLI
-- Local dashboard
+- Scope-safe CLI and local dashboard
 - Local demo lab
-- JavaScript endpoint extraction
+- JavaScript endpoint extraction with false-positive suppression
 - robots/sitemap/security.txt/OpenAPI/GraphQL collectors
 - route normalization and classification
-- risk scoring
+- risk scoring and risk reason breakdowns
+- endpoint extraction confidence
+- app relevance scoring
+- relevance-aware manual candidate generation
 - interactive HTML report
-- finding triage in browser localStorage
 - Markdown/JSON export
-- scan diff JSON for latest vs previous dashboard run
-- dashboard diff panel
-- persistent dashboard triage storage
-- static asset false-positive suppression
-- configurable suppression rules
-- dashboard scan loading state
-- Docker Compose demo lab
-- SQLite scan metadata storage
-- SQLite-backed dashboard history
-- SQLite-backed result and diff retrieval endpoints
-- SQLite-backed HTML/Markdown report regeneration
-- Importers: httpx, subfinder, nuclei, nmap
-- CLI result comparison (`routehawk compare`)
-- CLI run history (`routehawk history`)
-- Endpoint confidence classification
-- Risk reason breakdowns
-- Polite HTTP client retry/backoff controls
-- GitHub Actions CI and smoke workflows
-- Security headers and CORS summaries
-- Optional auth behavior analyzer
-- Demo report artifacts under `examples/`
-- Route group summaries
-- Dashboard scan success/error banners
-- Risk-sorted dashboard diff previews
+- dashboard history and compare drilldown
+- dashboard endpoint filters for relevance, confidence, source, and manual-candidate status
+- request budget enforcement
+- bug bounty safe profile
+- importers: httpx, subfinder, nuclei, nmap
+- GitHub Actions CI and local-lab smoke workflows
 
-## v0.2 Next
+## High Priority Next
 
-- Persistent scan history and triage state
-- Rich scan comparison UI for new, removed, changed endpoints
-- README screenshots or hosted report preview
+- dashboard filters polish
+- first-party vs third-party source classification
+- README/dashboard screenshots from the local demo lab
+- v0.2 release packaging
 
-## v0.3
+## Medium Priority Next
 
-- Program/workspace profiles
-- Export selected findings as Markdown drafts
+- Katana importer
+- Burp sitemap importer
+- Postman collection importer
+- finding notes/manual review notes
+- stronger workspace/program profiles
+- coverage/lint CI
 
-## v0.4
+## Later
 
-- Local FastAPI or richer dashboard backend
-- Endpoint group views
-- Asset clustering
-- Scan comparison UI
+- richer endpoint group views
+- asset clustering
+- persistent evidence attachments
+- report draft generation
+- optional desktop frontend
 
-## v1.0
+## Non-Goals
 
-- Full local workspace for authorized API security review
-- Persistent finding notes
-- Evidence attachments
-- Report draft generation
-- Optional desktop frontend
+- exploit verification automation
+- brute force
+- payload injection
+- auth bypass automation
+- destructive checks
+- scope-outside crawling
