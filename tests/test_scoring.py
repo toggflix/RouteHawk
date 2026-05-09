@@ -96,6 +96,9 @@ class ScoringTests(unittest.TestCase):
             "/tr/login",
             "/tr/payment/{id}",
             "/xml/export/{id}",
+            "/api/rec-export",
+            "/api/wd-report",
+            "/reports/rec-summary",
         ]
 
         for path in examples:

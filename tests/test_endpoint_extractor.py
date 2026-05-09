@@ -98,6 +98,9 @@ class EndpointExtractorTests(unittest.TestCase):
         "/xml/export/{id}"
         "/xml/feed"
         "/api/xml/report/{id}"
+        "/api/rec-export"
+        "/api/wd-report"
+        "/reports/rec-summary"
         """
 
         paths = unique_paths(extract_endpoints(text))
@@ -121,6 +124,9 @@ class EndpointExtractorTests(unittest.TestCase):
         self.assertIn("/xml/export/{id}", paths)
         self.assertIn("/xml/feed", paths)
         self.assertIn("/api/xml/report/{id}", paths)
+        self.assertIn("/api/rec-export", paths)
+        self.assertIn("/api/wd-report", paths)
+        self.assertIn("/reports/rec-summary", paths)
 
     def test_sets_medium_confidence_for_clean_non_method_paths(self):
         endpoints = extract_endpoints('"/api/users/123/billing"')

@@ -53,8 +53,6 @@ IGNORED_PATH_PREFIXES = (
 )
 W3C_DOCUMENTATION_PREFIXES = ("/consortium/legal/",)
 DOCUMENTATION_TOKENS = (
-    "rec-",
-    "wd-",
     "dom-level",
     "rec-css3-selectors",
     "wd-dom-level",
