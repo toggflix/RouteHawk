@@ -54,6 +54,7 @@ class ScopeSafeHttpClient:
         attempts = max(0, int(self.rules.max_retries)) + 1
 
         for attempt in range(attempts):
+            self._consume_request_budget()
             await self._respect_host_rate_limit(url)
             try:
                 response = await self._send_request(normalized_method, url, body=body)
@@ -85,7 +86,6 @@ class ScopeSafeHttpClient:
             self._client = None
 
     async def _send_request(self, method: str, url: str, body: str = "") -> httpx.Response:
-        self._consume_request_budget()
         client = await self._ensure_client()
         request_headers = {"Content-Type": "application/json"} if method == "POST" else None
         async with self._semaphore:

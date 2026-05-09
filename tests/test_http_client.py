@@ -24,7 +24,6 @@ class _RetryClient(ScopeSafeHttpClient):
 
     async def _send_request(self, method: str, url: str, body: str = ""):
         del method, url, body
-        self._consume_request_budget()
         self.calls += 1
         return self._responses.pop(0)
 

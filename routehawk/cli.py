@@ -193,7 +193,6 @@ async def _run_scan(
     options = config.scan if config else ScanOptions()
     rules, options = _apply_safe_profile(rules, options, safe_profile)
     suppression = config.suppression if config else SuppressionConfig()
-    # TODO: enforce rules.request_budget_per_scan in the HTTP request execution path.
     client = ScopeSafeHttpClient(validator, rules)
     result = ScanResult(target=target, scope=scope_domains)
     root_url = _origin(target)
