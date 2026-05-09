@@ -12,13 +12,14 @@ scope:
 rules:
   follow_redirects: true
   reject_out_of_scope_redirects: true
-  max_rps_per_host: 2
-  max_concurrency: 20
+  max_rps_per_host: 1
+  max_concurrency: 2
   timeout_seconds: 10
   user_agent: "RouteHawk/0.1"
-  max_retries: 2
-  retry_backoff_seconds: 0.5
+  max_retries: 1
+  retry_backoff_seconds: 1.0
   respect_retry_after: true
+  request_budget_per_scan: 500
 
 scan:
   passive_first: true
@@ -28,7 +29,7 @@ scan:
   parse_sitemap: true
   check_common_metadata: true
   check_auth_behavior: false
-  auth_probe_limit: 20
+  auth_probe_limit: 0
 
 suppression:
   ignore_suffixes:

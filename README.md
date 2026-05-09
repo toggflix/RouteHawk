@@ -25,6 +25,8 @@ RouteHawk is a local-first, scope-safe API reconnaissance workspace that turns n
 
 RouteHawk is designed for authorized, low-impact evidence collection and manual security review guidance.
 
+Use RouteHawk only on targets you are authorized to test. For bug bounty programs, follow scope, rate limits, and rules of engagement. RouteHawk does not perform exploitation or payload scanning.
+
 ## Quick Demo
 
 1. Install and start the local demo target:
@@ -74,6 +76,7 @@ Compare output highlights endpoint-level `new`, `removed`, and `changed` section
 ```powershell
 py -m routehawk --help
 py -m routehawk scan --config config.example.yaml --out results.json
+py -m routehawk scan --config config.example.yaml --safe-profile bug-bounty --out results.json
 py -m routehawk report --input results.json --out report.html
 py -m routehawk compare --base previous-results.json --head current-results.json --out diff.md
 py -m routehawk history --workspace . --limit 10

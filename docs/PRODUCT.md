@@ -12,6 +12,8 @@ RouteHawk is not an exploit scanner. It is a review workflow for authorized secu
 - generate manual review tasks with evidence and checklists
 - preserve run history, diffs, triage state, and reports locally
 
+RouteHawk is not a scanner that "finds vulnerabilities". It organizes endpoint evidence and helps prioritize manual review.
+
 ## Primary User Value
 
 When a reviewer has many raw routes, RouteHawk should answer:

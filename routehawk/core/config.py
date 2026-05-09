@@ -31,13 +31,14 @@ def load_config(path: str) -> RouteHawkConfig:
             reject_out_of_scope_redirects=bool(
                 rules_data.get("reject_out_of_scope_redirects", True)
             ),
-            max_rps_per_host=int(rules_data.get("max_rps_per_host", 2)),
-            max_concurrency=int(rules_data.get("max_concurrency", 20)),
+            max_rps_per_host=int(rules_data.get("max_rps_per_host", 1)),
+            max_concurrency=int(rules_data.get("max_concurrency", 2)),
             timeout_seconds=int(rules_data.get("timeout_seconds", 10)),
             user_agent=str(rules_data.get("user_agent", "RouteHawk/0.1")),
-            max_retries=int(rules_data.get("max_retries", 2)),
-            retry_backoff_seconds=float(rules_data.get("retry_backoff_seconds", 0.5)),
+            max_retries=int(rules_data.get("max_retries", 1)),
+            retry_backoff_seconds=float(rules_data.get("retry_backoff_seconds", 1.0)),
             respect_retry_after=bool(rules_data.get("respect_retry_after", True)),
+            request_budget_per_scan=int(rules_data.get("request_budget_per_scan", 500)),
         ),
         scan=ScanOptions(
             passive_first=bool(scan_data.get("passive_first", True)),
@@ -47,7 +48,7 @@ def load_config(path: str) -> RouteHawkConfig:
             parse_sitemap=bool(scan_data.get("parse_sitemap", True)),
             check_common_metadata=bool(scan_data.get("check_common_metadata", True)),
             check_auth_behavior=bool(scan_data.get("check_auth_behavior", False)),
-            auth_probe_limit=int(scan_data.get("auth_probe_limit", 20)),
+            auth_probe_limit=int(scan_data.get("auth_probe_limit", 0)),
         ),
         suppression=SuppressionConfig(
             ignore_suffixes=list(suppression_data.get("ignore_suffixes", [])),
