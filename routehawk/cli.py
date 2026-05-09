@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Iterable, Optional
 from urllib.parse import urljoin, urlparse
@@ -58,7 +59,10 @@ from routehawk.storage.sqlite import list_scan_records
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="routehawk",
-        description="Scope-safe API and JavaScript reconnaissance assistant.",
+        description=(
+            "Scope-safe API and JavaScript reconnaissance assistant. "
+            "RouteHawk is designed for authorized, low-impact reconnaissance."
+        ),
     )
     parser.add_argument("--version", action="version", version="RouteHawk 0.1.0")
 
@@ -69,6 +73,14 @@ def build_parser() -> argparse.ArgumentParser:
     scan.add_argument("--scope", action="append", default=[], help="Allowed domain or wildcard scope.")
     scan.add_argument("--config", help="Path to YAML config file.")
     scan.add_argument("--out", help="Report output path. Supports .json, .md, and .html.")
+    scan.add_argument(
+        "--safe-profile",
+        choices=["bug-bounty"],
+        help=(
+            "Apply low-impact safe settings for authorized bug bounty workflows. "
+            "Always follow program scope, rate limits, and rules of engagement."
+        ),
+    )
 
     extract_js = subparsers.add_parser("extract-js", help="Extract endpoints from a local JS file.")
     extract_js.add_argument("file", help="JavaScript file path.")
@@ -145,7 +157,15 @@ def _scan(args: argparse.Namespace) -> int:
     if not validator.is_url_allowed(target):
         raise SystemExit(f"Target is out of scope: {target}")
 
-    result = asyncio.run(_run_scan(target, sorted(set(scope_domains)), validator, config))
+    result = asyncio.run(
+        _run_scan(
+            target,
+            sorted(set(scope_domains)),
+            validator,
+            config,
+            safe_profile=args.safe_profile,
+        )
+    )
     output = _result_to_json(result)
 
     if args.out:
@@ -167,10 +187,13 @@ async def _run_scan(
     scope_domains: list,
     validator: ScopeValidator,
     config,
+    safe_profile: Optional[str] = None,
 ) -> ScanResult:
     rules = config.rules if config else RulesConfig()
     options = config.scan if config else ScanOptions()
+    rules, options = _apply_safe_profile(rules, options, safe_profile)
     suppression = config.suppression if config else SuppressionConfig()
+    # TODO: enforce rules.request_budget_per_scan in the HTTP request execution path.
     client = ScopeSafeHttpClient(validator, rules)
     result = ScanResult(target=target, scope=scope_domains)
     root_url = _origin(target)
@@ -968,6 +991,31 @@ def _max_extraction_confidence(left: str, right: str) -> str:
     normalized_left = _normalize_extraction_confidence(left)
     normalized_right = _normalize_extraction_confidence(right)
     return normalized_left if rank[normalized_left] >= rank[normalized_right] else normalized_right
+
+
+def _apply_safe_profile(
+    rules: RulesConfig,
+    options: ScanOptions,
+    safe_profile: Optional[str],
+) -> tuple[RulesConfig, ScanOptions]:
+    if safe_profile != "bug-bounty":
+        return rules, options
+    return (
+        replace(
+            rules,
+            max_rps_per_host=1,
+            max_concurrency=2,
+            max_retries=1,
+            retry_backoff_seconds=1.0,
+            respect_retry_after=True,
+            request_budget_per_scan=500,
+        ),
+        replace(
+            options,
+            check_auth_behavior=False,
+            auth_probe_limit=0,
+        ),
+    )
 
 
 if __name__ == "__main__":

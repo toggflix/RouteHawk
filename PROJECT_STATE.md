@@ -188,6 +188,9 @@ Docs/demo:
 - docs/USAGE includes quick demo and compare drilldown guidance
 - docs/PRODUCT includes user-value framing and GitHub storytelling notes
 - examples/README clarifies demo artifact purpose for output shape review
+- bug bounty safe usage guidance added across README and docs/USAGE
+- optional safe profile and low-impact defaults documented
+- request budget config support added (`request_budget_per_scan`, enforcement TODO)
 
 Automation:
 

@@ -14,13 +14,14 @@ class ScopeConfig:
 class RulesConfig:
     follow_redirects: bool = True
     reject_out_of_scope_redirects: bool = True
-    max_rps_per_host: int = 2
-    max_concurrency: int = 20
+    max_rps_per_host: int = 1
+    max_concurrency: int = 2
     timeout_seconds: int = 10
     user_agent: str = "RouteHawk/0.1"
-    max_retries: int = 2
-    retry_backoff_seconds: float = 0.5
+    max_retries: int = 1
+    retry_backoff_seconds: float = 1.0
     respect_retry_after: bool = True
+    request_budget_per_scan: int = 500
 
 
 @dataclass(frozen=True)
@@ -32,7 +33,7 @@ class ScanOptions:
     parse_sitemap: bool = True
     check_common_metadata: bool = True
     check_auth_behavior: bool = False
-    auth_probe_limit: int = 20
+    auth_probe_limit: int = 0
 
 
 @dataclass(frozen=True)

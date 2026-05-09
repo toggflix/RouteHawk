@@ -109,6 +109,12 @@ py -m routehawk report --input results.json --out report.html
 py -m routehawk report --input results.json --out report.md
 ```
 
+For authorized bug bounty workflows, you can apply the built-in low-impact profile:
+
+```powershell
+py -m routehawk scan --config config.example.yaml --safe-profile bug-bounty --out results.json
+```
+
 Import supported recon output:
 
 ```powershell
@@ -130,11 +136,12 @@ Polite client retry/rate settings:
 
 ```yaml
 rules:
-  max_rps_per_host: 2
-  max_concurrency: 20
-  max_retries: 2
-  retry_backoff_seconds: 0.5
+  max_rps_per_host: 1
+  max_concurrency: 2
+  max_retries: 1
+  retry_backoff_seconds: 1.0
   respect_retry_after: true
+  request_budget_per_scan: 500
 ```
 
 Compare and history commands:
@@ -142,6 +149,34 @@ Compare and history commands:
 ```powershell
 py -m routehawk compare --base previous-results.json --head current-results.json --out diff.md
 py -m routehawk history --workspace . --limit 10
+```
+
+Latest diff output is most meaningful when comparing scans from the same target and scope.
+
+## Bug Bounty Safe Usage
+
+- Read program scope and rules of engagement before scanning.
+- If a program disallows automated scanning, do not run active scans; use local/demo/import workflows only.
+- Only scan domains that are explicitly in-scope.
+- Do not test third-party infrastructure outside program scope.
+- Run login-related checks only when program policy allows it, and only with your own authorized accounts.
+- If you encounter sensitive personal, payment, or private data, stop testing and follow the program disclosure process.
+- Programs may define stricter request and rate limits; always follow the specific program policy.
+
+Recommended low-impact config:
+
+```yaml
+rules:
+  max_rps_per_host: 1
+  max_concurrency: 2
+  max_retries: 1
+  retry_backoff_seconds: 1.0
+  respect_retry_after: true
+  request_budget_per_scan: 500
+
+scan:
+  check_auth_behavior: false
+  auth_probe_limit: 0
 ```
 
 ## Safety Notes
