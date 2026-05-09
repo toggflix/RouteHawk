@@ -25,6 +25,10 @@ When a reviewer has many raw routes, RouteHawk should answer:
 
 The product should reduce review noise and increase evidence quality, not increase request aggressiveness.
 
+RouteHawk prioritizes precision over raw endpoint count. It separates security risk signals from app relevance so third-party documentation, repository references, and vendor library strings do not crowd out likely first-party application routes.
+
+RouteHawk is not a vulnerability verifier. It produces endpoint inventory, evidence quality signals, and manual review candidates.
+
 ## Differentiation
 
 Existing tools commonly focus on one layer:

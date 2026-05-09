@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Iterable
 
 
@@ -112,6 +113,119 @@ def endpoint_confidence(
     if confidence_points >= 3:
         return "medium"
     return "low"
+
+
+def classify_app_relevance(
+    method: str,
+    normalized_path: str,
+    sources: Iterable[str] = (),
+    source_urls: Iterable[str] = (),
+    tags: Iterable[str] = (),
+) -> tuple[str, list[str]]:
+    source_set = {str(item).lower() for item in sources if item}
+    tag_set = {str(item).lower() for item in tags if item}
+    source_url_set = {str(item) for item in source_urls if item}
+    path = normalized_path or "/"
+    lowered = path.lower()
+
+    low_reasons = _low_relevance_reasons(lowered)
+    if low_reasons:
+        return "low", low_reasons
+
+    score = 0
+    reasons: list[str] = []
+    if "openapi" in source_set:
+        score += 3
+        reasons.append("Structured OpenAPI evidence")
+    if len(source_set) >= 2 or len(source_url_set) >= 2:
+        score += 2
+        reasons.append("Corroborated by multiple sources")
+    if _is_first_party_api_like(lowered):
+        score += 2
+        reasons.append("First-party API-like path")
+    if _is_auth_account_payment_path(lowered, tag_set):
+        score += 2
+        reasons.append("Auth/account/payment related application path")
+    if "graphql" in tag_set or lowered == "/graphql":
+        score += 2
+        reasons.append("GraphQL application path")
+
+    if score >= 2:
+        return "high", _unique_reasons(reasons)
+
+    reasons.append("Clean application route shape")
+    return "medium", _unique_reasons(reasons)
+
+
+def normalize_app_relevance(value: str) -> str:
+    lowered = (value or "").strip().lower()
+    if lowered in {"high", "medium", "low"}:
+        return lowered
+    return "medium"
+
+
+def max_app_relevance(left: str, right: str) -> str:
+    rank = {"low": 1, "medium": 2, "high": 3}
+    normalized_left = normalize_app_relevance(left)
+    normalized_right = normalize_app_relevance(right)
+    return normalized_left if rank[normalized_left] >= rank[normalized_right] else normalized_right
+
+
+def _low_relevance_reasons(lowered_path: str) -> list[str]:
+    path_only = lowered_path.split("?", 1)[0].split("#", 1)[0]
+    reasons = []
+    if re.match(r"^/xml/[^/]+/namespace/?$", path_only) or path_only.startswith("/consortium/legal/") or any(
+        token in path_only
+        for token in (
+            "dom-level",
+            "rec-css3-selectors",
+            "wd-dom-level",
+            "css3-selectors",
+            "ecma-script-binding.html",
+            "copyright-software-and-document",
+        )
+    ):
+        reasons.append("W3C/specification documentation path")
+    if path_only.startswith(("/youtubei/v1/", "/get/videoqualityreport/")):
+        reasons.append("Vendor telemetry-like path")
+    if re.match(r"^/[a-z0-9][a-z0-9_.-]*/[a-z0-9][a-z0-9_.-]*/(?:issues|pull)/", path_only):
+        reasons.append("Repository/documentation-like path")
+    else:
+        segments = [segment for segment in path_only.split("/") if segment]
+        if len(segments) >= 2 and segments[0] in {"microsoft", "twbs", "krzysu", "studio-42"}:
+            reasons.append("Repository/documentation-like path")
+        elif len(segments) >= 2 and "." in segments[1] and not path_only.startswith(("/api/", "/auth/", "/account/", "/payment/")):
+            reasons.append("Repository/documentation-like path")
+    if re.match(r"^/[a-z]\)/", path_only):
+        reasons.append("Malformed JavaScript residue")
+    return _unique_reasons(reasons)
+
+
+def _is_first_party_api_like(lowered_path: str) -> bool:
+    return lowered_path == "/graphql" or lowered_path.startswith("/api/") or bool(re.match(r"^/api/v\d+/", lowered_path))
+
+
+def _is_auth_account_payment_path(lowered_path: str, tags: set[str]) -> bool:
+    if tags.intersection({"billing", "auth", "user-object", "business-object", "authorization", "data-export"}):
+        return True
+    return any(
+        token in lowered_path
+        for token in (
+            "/auth/",
+            "/account/",
+            "/login",
+            "/payment",
+            "/billing",
+            "/invoice",
+            "/users/",
+            "/orders/",
+            "/customers/",
+        )
+    )
+
+
+def _unique_reasons(reasons: Iterable[str]) -> list[str]:
+    return sorted({reason for reason in reasons if reason})
 
 
 def severity_for_score(score: int) -> str:

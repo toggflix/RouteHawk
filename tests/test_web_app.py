@@ -26,6 +26,7 @@ class WebAppTests(unittest.TestCase):
                         "endpoint": "GET /api/admin/export",
                         "risk_score": 90,
                         "extraction_confidence": "high",
+                        "app_relevance": "high",
                         "sources": ["openapi"],
                         "tags": ["admin", "data-export"],
                         "source_urls_count": 1,
@@ -38,6 +39,7 @@ class WebAppTests(unittest.TestCase):
                         "endpoint": "GET /debug/config",
                         "risk_score": 35,
                         "extraction_confidence": "medium",
+                        "app_relevance": "low",
                         "sources": ["javascript"],
                         "tags": ["debug"],
                         "source_urls_count": 1,
@@ -53,6 +55,7 @@ class WebAppTests(unittest.TestCase):
                         "deltas": {
                             "risk_score": {"previous": 55, "current": 80},
                             "extraction_confidence": {"previous": "medium", "current": "high"},
+                            "app_relevance": {"previous": "medium", "current": "high"},
                             "tags": {"added": ["billing"], "removed": []},
                             "sources": {"added": ["openapi"], "removed": []},
                         },
@@ -60,6 +63,7 @@ class WebAppTests(unittest.TestCase):
                             "endpoint": "GET /api/users/{id}",
                             "risk_score": 80,
                             "extraction_confidence": "high",
+                            "app_relevance": "high",
                             "sources": ["javascript", "openapi"],
                             "tags": ["object-reference", "billing"],
                             "source_urls_count": 2,
@@ -78,6 +82,9 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("/debug/config", html)
         self.assertIn("risk 55 -> 80", html)
         self.assertIn("confidence: medium -> high", html)
+        self.assertIn("app relevance: medium -> high", html)
+        self.assertIn("app relevance high", html)
+        self.assertIn("relevance-low", html)
         self.assertIn("sources: +[openapi] -[none]", html)
         self.assertIn("Open Diff JSON", html)
         self.assertIn("Showing 1", html)
@@ -247,6 +254,7 @@ class WebAppTests(unittest.TestCase):
                         "endpoint": "GET /api/billing/{id}",
                         "risk_score": 90,
                         "extraction_confidence": "high",
+                        "app_relevance": "high",
                         "sources": ["openapi"],
                         "tags": ["billing", "object-reference"],
                         "source_urls_count": 1,
@@ -263,11 +271,13 @@ class WebAppTests(unittest.TestCase):
                         "deltas": {
                             "risk_score": {"previous": 55, "current": 80},
                             "extraction_confidence": {"previous": "medium", "current": "high"},
+                            "app_relevance": {"previous": "medium", "current": "high"},
                         },
                         "current": {
                             "endpoint": "GET /api/users/{id}",
                             "risk_score": 80,
                             "extraction_confidence": "high",
+                            "app_relevance": "high",
                             "sources": ["javascript", "openapi"],
                             "tags": ["object-reference"],
                             "source_urls_count": 2,
@@ -291,6 +301,9 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("Changed endpoints", html)
         self.assertIn("risk score: 55 -> 80", html)
         self.assertIn("confidence: medium -> high", html)
+        self.assertIn("app relevance: medium -> high", html)
+        self.assertIn("App Relevance", html)
+        self.assertIn("app relevance high", html)
         self.assertIn("risk-badge", html)
 
     def test_compare_panel_shows_empty_states_for_sections(self):
@@ -396,6 +409,7 @@ class WebAppTests(unittest.TestCase):
                         "parameters": [],
                         "tags": ["object-reference"],
                         "risk_score": 80,
+                        "app_relevance": "high",
                         "sources": ["javascript"],
                         "source_urls": ["http://localhost:8088/static/main.js"],
                         "raw_paths": ["/api/users/1/billing"],

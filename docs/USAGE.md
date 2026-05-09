@@ -101,6 +101,19 @@ suppression:
 
 Built-in suppression already removes common static assets such as images, fonts, CSS, JavaScript maps, and CDN-style `//host/path` strings.
 
+## Endpoint Precision and App Relevance
+
+RouteHawk applies conservative suppression for common third-party JavaScript noise, including documentation/specification paths, repository references, vendor telemetry strings, static assets, and malformed JavaScript expression residue.
+
+Endpoint risk and app relevance are tracked separately:
+
+- Risk score estimates whether an endpoint has security review signals.
+- App relevance estimates whether the endpoint appears to belong to the target application.
+- Low relevance endpoints may remain in inventory when present in imported data, but they are not promoted as manual review candidates.
+- Reviewers should still manually verify scope, ownership, and business relevance before testing.
+
+Reports show app relevance and short relevance reasons next to endpoint confidence so noisy route collections are easier to triage.
+
 ## CLI
 
 ```powershell
