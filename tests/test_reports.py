@@ -19,6 +19,8 @@ class ReportTests(unittest.TestCase):
                 normalized_path="/api/users/{id}/billing",
                 tags=["object-reference", "billing"],
                 extraction_confidence="medium",
+                app_relevance="high",
+                relevance_reasons=["First-party API-like path"],
                 risk_score=80,
                 sources=["javascript"],
                 source_urls=["https://example.com/main.js"],
@@ -32,6 +34,8 @@ class ReportTests(unittest.TestCase):
                 normalized_path="/api/users/{id}/billing",
                 tags=["object-reference", "billing", "user-object"],
                 extraction_confidence="high",
+                app_relevance="high",
+                relevance_reasons=["Structured OpenAPI evidence"],
                 risk_score=85,
                 sources=["openapi"],
                 source_urls=["https://example.com/swagger.json"],
@@ -45,6 +49,8 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(merged[0].risk_score, 85)
         self.assertEqual(merged[0].sources, ["javascript", "openapi"])
         self.assertEqual(merged[0].extraction_confidence, "high")
+        self.assertEqual(merged[0].app_relevance, "high")
+        self.assertIn("Structured OpenAPI evidence", merged[0].relevance_reasons)
         self.assertEqual(merged[0].confidence, "high")
         self.assertIn("Corroborated by 2 source URLs", merged[0].evidence)
         self.assertIn("Endpoint found in javascript", merged[0].evidence)
@@ -59,6 +65,8 @@ class ReportTests(unittest.TestCase):
             raw_path="/api/users/{id}/billing",
             normalized_path="/api/users/{id}/billing",
             tags=["object-reference", "billing", "user-object"],
+            app_relevance="high",
+            relevance_reasons=["First-party API-like path"],
             risk_score=85,
             sources=["javascript", "openapi"],
             source_urls=["https://example.com/main.js", "https://example.com/swagger.json"],
@@ -84,6 +92,8 @@ class ReportTests(unittest.TestCase):
             raw_path="/api/users/{id}/billing",
             normalized_path="/api/users/{id}/billing",
             tags=["object-reference", "billing", "user-object"],
+            app_relevance="high",
+            relevance_reasons=["First-party API-like path"],
             risk_score=85,
             sources=["openapi"],
             source_urls=["https://example.com/swagger.json"],
@@ -108,9 +118,14 @@ class ReportTests(unittest.TestCase):
         self.assertIn("filter-search", html)
         self.assertIn("filter-status", html)
         self.assertIn("Extraction confidence:", markdown)
+        self.assertIn("App relevance:", markdown)
+        self.assertIn("First-party API-like path", markdown)
         self.assertIn("Risk reasons:", markdown)
         self.assertIn("Risk Signals", html)
         self.assertIn("Extraction Confidence", html)
+        self.assertIn("App Relevance", html)
+        self.assertIn("First-party API-like path", html)
+        self.assertIn("Relevance: high", html)
         self.assertIn("data-copy-checklist", html)
         self.assertIn("data-copy-draft", html)
         self.assertIn("Copy finding draft", html)
@@ -192,6 +207,17 @@ class ReportTests(unittest.TestCase):
             normalized_path="/api/users/{id}/billing",
         )
         self.assertEqual(endpoint.extraction_confidence, "medium")
+
+    def test_endpoint_model_uses_default_app_relevance_for_backward_compat(self):
+        endpoint = Endpoint(
+            source="javascript",
+            source_url="https://example.com/main.js",
+            method="GET",
+            raw_path="/api/users/1/billing",
+            normalized_path="/api/users/{id}/billing",
+        )
+        self.assertEqual(endpoint.app_relevance, "medium")
+        self.assertEqual(endpoint.relevance_reasons, [])
 
 
 if __name__ == "__main__":

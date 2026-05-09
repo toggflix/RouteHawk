@@ -36,6 +36,7 @@ class EndpointExtractorTests(unittest.TestCase):
         self.assertNotIn("/{id}?.5*jQuery.easing.easeInBounce(a,2*b,0,d,e)", paths)
         self.assertNotIn("/foo(bar)", paths)
         self.assertNotIn("/api/users/1 + something", paths)
+        self.assertNotIn("/api/users/1", paths)
 
     def test_keeps_valid_api_paths_and_queries(self):
         text = """
@@ -55,6 +56,57 @@ class EndpointExtractorTests(unittest.TestCase):
         self.assertIn("/graphql", paths)
         self.assertIn("/api/report.json", paths)
         self.assertIn("/swagger.json", paths)
+
+    def test_rejects_third_party_documentation_and_vendor_noise(self):
+        text = """
+        "/TR/{id}/REC-css3-selectors-20110929/"
+        "/TR/{id}/WD-DOM-Level-3-Events-20030331/ecma-script-binding.html"
+        "/Microsoft/TypeScript/issues/{id}"
+        "/twbs/bootstrap"
+        "/krzysu/flot.tooltip"
+        "/Studio-42/elFinder/pull/{id}"
+        "/Consortium/Legal/{id}/copyright-software-and-document"
+        "/youtubei/v1/live_chat/{token}"
+        "/XML/{id}/namespace"
+        "/get/videoqualityreport/?v={value}"
+        "/C)/{id}"
+        "/e)/{id}"
+        """
+
+        paths = unique_paths(extract_endpoints(text))
+
+        self.assertEqual(paths, [])
+
+    def test_keeps_application_routes_after_noise_suppression(self):
+        text = """
+        "/api/users/{id}/billing"
+        "/api/orders/{id}"
+        "/questions/{id}/{token}"
+        "/blog/{id}/{token}"
+        "/graphql"
+        "/openapi.json"
+        "/swagger.json"
+        "/payment/{id}"
+        "/auth/callback"
+        "/login"
+        "/account/settings"
+        "/api/v1/products/{id}"
+        """
+
+        paths = unique_paths(extract_endpoints(text))
+
+        self.assertIn("/api/users/{id}/billing", paths)
+        self.assertIn("/api/orders/{id}", paths)
+        self.assertIn("/questions/{id}/{token}", paths)
+        self.assertIn("/blog/{id}/{token}", paths)
+        self.assertIn("/graphql", paths)
+        self.assertIn("/openapi.json", paths)
+        self.assertIn("/swagger.json", paths)
+        self.assertIn("/payment/{id}", paths)
+        self.assertIn("/auth/callback", paths)
+        self.assertIn("/login", paths)
+        self.assertIn("/account/settings", paths)
+        self.assertIn("/api/v1/products/{id}", paths)
 
     def test_sets_medium_confidence_for_clean_non_method_paths(self):
         endpoints = extract_endpoints('"/api/users/123/billing"')

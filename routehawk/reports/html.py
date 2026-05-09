@@ -186,6 +186,18 @@ def render_html(result: ScanResult, triage_load_url: str = "", triage_update_url
       font-size: 12px;
       color: #344054;
     }}
+    .badge {{
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: #fbfcfe;
+      font-size: 12px;
+      font-weight: 700;
+      color: #344054;
+    }}
+    .badge.low {{ color: var(--muted); background: #f4f6f9; }}
+    tr.relevance-low {{ opacity: .72; }}
     .score {{ font-weight: 700; }}
     .score.high {{ color: var(--high); }}
     .score.medium {{ color: var(--medium); }}
@@ -296,6 +308,7 @@ def render_html(result: ScanResult, triage_load_url: str = "", triage_update_url
             <th>Route</th>
             <th>Risk</th>
             <th>Extraction Confidence</th>
+            <th>App Relevance</th>
             <th>Sources</th>
             <th>Tags</th>
             <th>Risk Signals</th>
@@ -500,6 +513,7 @@ def _finding_cards(result: ScanResult) -> str:
         severity = escape(finding.severity)
         endpoint = endpoints.get(finding.endpoint)
         sources = endpoint.sources if endpoint else []
+        relevance = endpoint.app_relevance if endpoint else "medium"
         source_data = escape(" ".join(sources), quote=True)
         key = escape(finding.endpoint, quote=True)
         search_data = escape(
@@ -522,7 +536,7 @@ def _finding_cards(result: ScanResult) -> str:
         cards.append(
             f'<article class="finding {severity}" data-report-item="finding" data-key="{key}" data-status="unreviewed" data-severity="{severity}" data-type="{escape(finding.type, quote=True)}" data-sources="{source_data}" data-search="{search_data}">'
             f"<h3>[{escape(finding.severity.title())}] <code>{escape(finding.endpoint)}</code></h3>"
-            f'<p class="meta">Type: {escape(finding.type)} | Confidence: {escape(finding.confidence)} | Status: <span class="status-badge" data-status-badge>unreviewed</span></p>'
+            f'<p class="meta">Type: {escape(finding.type)} | Confidence: {escape(finding.confidence)} | Relevance: {escape(relevance)} | Status: <span class="status-badge" data-status-badge>unreviewed</span></p>'
             "<h4>Evidence</h4>"
             f"<ul>{evidence}</ul>"
             "<h4>Manual Test Plan</h4>"
@@ -604,7 +618,7 @@ def _metadata_rows(result: ScanResult) -> str:
 
 def _endpoint_rows(result: ScanResult) -> str:
     if not result.endpoints:
-        return '<tr><td colspan="7" class="empty">No endpoints recorded yet.</td></tr>'
+        return '<tr><td colspan="8" class="empty">No endpoints recorded yet.</td></tr>'
     return "".join(_endpoint_row(endpoint) for endpoint in result.endpoints)
 
 
@@ -636,12 +650,18 @@ def _endpoint_row(endpoint: Endpoint) -> str:
     source_urls = endpoint.source_urls or [endpoint.source_url]
     tags = endpoint.tags or []
     reasons = endpoint.risk_reasons[:4]
+    relevance_reasons = endpoint.relevance_reasons[:3]
     source_title = "\n".join(source_urls)
     tag_html = _pills(tags) if tags else '<span class="empty">none</span>'
     reason_html = (
         "<ul>" + "".join(f"<li>{escape(reason)}</li>" for reason in reasons) + "</ul>"
         if reasons
         else '<span class="empty">none</span>'
+    )
+    relevance_reason_html = (
+        "<br><span class=\"meta\">" + escape(", ".join(relevance_reasons)) + "</span>"
+        if relevance_reasons
+        else ""
     )
     source_data = escape(" ".join(sources), quote=True)
     search_data = escape(
@@ -652,16 +672,20 @@ def _endpoint_row(endpoint: Endpoint) -> str:
                 " ".join(endpoint.raw_paths or [endpoint.raw_path]),
                 " ".join(sources),
                 " ".join(tags),
+                endpoint.app_relevance,
+                " ".join(relevance_reasons),
             ]
         ).lower(),
         quote=True,
     )
+    relevance = _normalize_report_level(endpoint.app_relevance)
     return (
-        f'<tr data-report-item="endpoint" data-severity="{severity}" data-sources="{source_data}" data-search="{search_data}">'
+        f'<tr class="relevance-{relevance}" data-report-item="endpoint" data-severity="{severity}" data-sources="{source_data}" data-search="{search_data}">'
         f"<td>{escape(endpoint.method)}</td>"
         f"<td><code>{escape(endpoint.normalized_path)}</code><br><span class=\"meta\">Raw variants: {len(endpoint.raw_paths or [endpoint.raw_path])}</span></td>"
         f'<td><span class="score {severity}">{endpoint.risk_score}</span><br><span class="meta">{escape(severity)}</span></td>'
         f"<td>{escape(endpoint.extraction_confidence)}</td>"
+        f'<td><span class="badge {relevance}">{escape(relevance)}</span>{relevance_reason_html}</td>'
         f'<td title="{escape(source_title)}">{_pills(sources)}</td>'
         f"<td>{tag_html}</td>"
         f"<td>{reason_html}</td>"
@@ -690,6 +714,13 @@ def _select_options(items) -> str:
         f'<option value="{escape(str(item), quote=True)}">{escape(str(item))}</option>'
         for item in items
     )
+
+
+def _normalize_report_level(value: str) -> str:
+    lowered = (value or "").strip().lower()
+    if lowered in {"high", "medium", "low"}:
+        return lowered
+    return "medium"
 
 
 def _finding_draft(finding) -> str:

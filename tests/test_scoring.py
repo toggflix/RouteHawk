@@ -1,12 +1,15 @@
 import unittest
 
 from routehawk.analyzers.idor_candidates import (
+    classify_app_relevance,
     endpoint_confidence,
     score_endpoint,
     score_endpoint_with_reasons,
     severity_for_score,
 )
 from routehawk.analyzers.route_classifier import classify_endpoint
+from routehawk.cli import _should_create_finding
+from routehawk.core.models import Endpoint
 
 
 class ScoringTests(unittest.TestCase):
@@ -53,6 +56,67 @@ class ScoringTests(unittest.TestCase):
         )
         self.assertEqual(high, "high")
         self.assertEqual(low, "low")
+
+    def test_classifies_api_billing_path_as_high_app_relevance(self):
+        path = "/api/users/{id}/billing"
+        tags = classify_endpoint("GET", path)
+
+        relevance, reasons = classify_app_relevance(
+            "GET",
+            path,
+            sources=["javascript"],
+            source_urls=["https://example.com/main.js"],
+            tags=tags,
+        )
+
+        self.assertEqual(relevance, "high")
+        self.assertIn("First-party API-like path", reasons)
+
+    def test_blog_and_question_routes_are_not_low_relevance(self):
+        for path in ["/questions/{id}/{token}", "/blog/{id}/{token}"]:
+            relevance, _ = classify_app_relevance("GET", path, sources=["javascript"], tags=[])
+            self.assertIn(relevance, {"medium", "high"})
+
+    def test_classifies_documentation_repository_and_vendor_paths_as_low_relevance(self):
+        examples = [
+            "/TR/{id}/REC-css3-selectors-20110929/",
+            "/Microsoft/TypeScript/issues/{id}",
+            "/youtubei/v1/live_chat/{token}",
+            "/krzysu/flot.tooltip",
+        ]
+
+        for path in examples:
+            relevance, reasons = classify_app_relevance("GET", path, sources=["javascript"], tags=[])
+            self.assertEqual(relevance, "low")
+            self.assertTrue(reasons)
+
+    def test_low_relevance_endpoint_does_not_create_finding(self):
+        endpoint = Endpoint(
+            source="javascript",
+            source_url="https://example.com/main.js",
+            method="GET",
+            raw_path="/Microsoft/TypeScript/issues/{id}",
+            normalized_path="/Microsoft/TypeScript/issues/{id}",
+            tags=["object-reference", "admin"],
+            app_relevance="low",
+            risk_score=90,
+        )
+
+        self.assertFalse(_should_create_finding(endpoint))
+
+    def test_high_relevance_risky_endpoint_can_create_finding(self):
+        endpoint = Endpoint(
+            source="javascript",
+            source_url="https://example.com/main.js",
+            method="GET",
+            raw_path="/api/users/1/billing",
+            normalized_path="/api/users/{id}/billing",
+            tags=["object-reference", "billing", "user-object"],
+            app_relevance="high",
+            risk_score=80,
+        )
+
+        self.assertTrue(_should_create_finding(endpoint))
 
 
 if __name__ == "__main__":

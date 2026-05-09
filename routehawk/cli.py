@@ -16,7 +16,10 @@ from routehawk.analyzers.idor_candidates import (
     GRAPHQL_CHECKLIST,
     INTERNAL_DEBUG_CHECKLIST,
     MANUAL_IDOR_CHECKLIST,
+    classify_app_relevance,
     endpoint_confidence,
+    max_app_relevance,
+    normalize_app_relevance,
     score_endpoint_with_reasons,
     severity_for_score,
 )
@@ -535,6 +538,13 @@ def _endpoint_from_extracted(
     normalized = normalize_path(raw_path)
     tags = classify_endpoint(method, normalized)
     risk_score, risk_reasons = score_endpoint_with_reasons(method, normalized, tags, source=source)
+    app_relevance, relevance_reasons = classify_app_relevance(
+        method,
+        normalized,
+        sources=[source],
+        source_urls=[source_url],
+        tags=tags,
+    )
     return Endpoint(
         source=source,
         source_url=source_url,
@@ -544,6 +554,8 @@ def _endpoint_from_extracted(
         parameters=parameters,
         tags=tags,
         extraction_confidence=_normalize_extraction_confidence(confidence),
+        app_relevance=app_relevance,
+        relevance_reasons=relevance_reasons,
         risk_score=risk_score,
         risk_reasons=risk_reasons,
         confidence="low",
@@ -569,6 +581,8 @@ def _dedupe_endpoints(endpoints: list) -> list:
         existing.parameters = sorted(set(existing.parameters + endpoint.parameters))
         existing.tags = sorted(set(existing.tags + endpoint.tags))
         existing.risk_reasons = sorted(set(existing.risk_reasons + endpoint.risk_reasons))
+        existing.relevance_reasons = sorted(set(existing.relevance_reasons + endpoint.relevance_reasons))
+        existing.app_relevance = max_app_relevance(existing.app_relevance, endpoint.app_relevance)
         existing.extraction_confidence = _max_extraction_confidence(
             existing.extraction_confidence,
             endpoint.extraction_confidence,
@@ -595,6 +609,15 @@ def _dedupe_endpoints(endpoints: list) -> list:
             )
             endpoint.risk_score = max(endpoint.risk_score, score)
             endpoint.risk_reasons = reasons
+        relevance, relevance_reasons = classify_app_relevance(
+            endpoint.method,
+            endpoint.normalized_path,
+            sources=endpoint.sources,
+            source_urls=endpoint.source_urls,
+            tags=endpoint.tags,
+        )
+        endpoint.app_relevance = max_app_relevance(endpoint.app_relevance, relevance)
+        endpoint.relevance_reasons = sorted(set(endpoint.relevance_reasons + relevance_reasons))
         endpoint.evidence = _endpoint_evidence(endpoint)
     return sorted(seen.values(), key=lambda item: (item.risk_score, item.normalized_path), reverse=True)
 
@@ -620,6 +643,8 @@ def _findings_from_endpoints(target: str, endpoints: list) -> list:
 
 
 def _should_create_finding(endpoint: Endpoint) -> bool:
+    if normalize_app_relevance(endpoint.app_relevance) == "low":
+        return False
     tags = set(endpoint.tags)
     if endpoint.risk_score >= 56:
         return True
@@ -675,6 +700,16 @@ def _ensure_endpoint_lists(endpoint: Endpoint) -> None:
         endpoint.source_urls = [endpoint.source_url]
     if not endpoint.raw_paths:
         endpoint.raw_paths = [endpoint.raw_path]
+    if not endpoint.relevance_reasons:
+        relevance, reasons = classify_app_relevance(
+            endpoint.method,
+            endpoint.normalized_path,
+            sources=endpoint.sources,
+            source_urls=endpoint.source_urls,
+            tags=endpoint.tags,
+        )
+        endpoint.app_relevance = relevance
+        endpoint.relevance_reasons = reasons
 
 
 def _endpoint_evidence(endpoint: Endpoint) -> list:
@@ -685,6 +720,10 @@ def _endpoint_evidence(endpoint: Endpoint) -> list:
         evidence.append(f"Corroborated by {len(endpoint.source_urls)} source URLs")
     for reason in endpoint.risk_reasons[:4]:
         evidence.append(f"Risk signal: {reason}")
+    if endpoint.app_relevance:
+        evidence.append(f"App relevance: {normalize_app_relevance(endpoint.app_relevance)}")
+    for reason in endpoint.relevance_reasons[:3]:
+        evidence.append(f"Relevance signal: {reason}")
     evidence.extend(_evidence_from_tags(endpoint.tags))
     return sorted(set(evidence))
 
@@ -703,6 +742,13 @@ def _extract_js(args: argparse.Namespace) -> int:
         normalized = normalize_path(raw.path)
         tags = classify_endpoint(raw.method, normalized)
         score, reasons = score_endpoint_with_reasons(raw.method, normalized, tags, source="javascript")
+        app_relevance, relevance_reasons = classify_app_relevance(
+            raw.method,
+            normalized,
+            sources=["javascript"],
+            source_urls=[args.source_url],
+            tags=tags,
+        )
         endpoint = Endpoint(
             source="javascript",
             source_url=args.source_url,
@@ -712,6 +758,8 @@ def _extract_js(args: argparse.Namespace) -> int:
             parameters=raw.parameters,
             tags=tags,
             extraction_confidence=_normalize_extraction_confidence(raw.confidence),
+            app_relevance=app_relevance,
+            relevance_reasons=relevance_reasons,
             risk_score=score,
             risk_reasons=reasons,
             confidence="low",

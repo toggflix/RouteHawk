@@ -92,12 +92,15 @@ def render_markdown(result: ScanResult) -> str:
             tags = ", ".join(endpoint.tags) if endpoint.tags else "none"
             sources = ", ".join(endpoint.sources or [endpoint.source])
             reasons = endpoint.risk_reasons[:5]
+            relevance_reasons = endpoint.relevance_reasons[:3]
             lines.extend(
                 [
                     f"### {endpoint.method} `{endpoint.normalized_path}`",
                     "",
                     f"- Risk score: {endpoint.risk_score}",
                     f"- Extraction confidence: {endpoint.extraction_confidence}",
+                    f"- App relevance: {endpoint.app_relevance}",
+                    f"- Relevance reasons: {', '.join(relevance_reasons) if relevance_reasons else 'none'}",
                     f"- Sources: {sources}",
                     f"- Tags: {tags}",
                     f"- Source URLs: {len(endpoint.source_urls or [endpoint.source_url])}",

@@ -412,6 +412,17 @@ class RouteHawkWebApp:
       font-size: 12px;
       font-weight: 700;
     }}
+    .relevance-badge {{
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 2px 8px;
+      background: #fff;
+      color: var(--ink);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .relevance-low {{ opacity: .7; }}
     .diff-item {{
       border-top: 1px solid var(--line);
       padding-top: 8px;
@@ -891,6 +902,7 @@ def _diff_changed_column(items: object) -> str:
         previous_score = escape(str(item.get("previous_risk_score", 0)))
         current_score = escape(str(item.get("current_risk_score", 0)))
         confidence = _diff_confidence(current)
+        relevance = _diff_relevance(current)
         sources = _diff_sources(current)
         source_urls = _safe_int(current.get("source_urls_count", 0))
         reason_count = _safe_int(current.get("risk_reason_count", 0))
@@ -899,7 +911,7 @@ def _diff_changed_column(items: object) -> str:
         rows.append(
             '<div class="diff-item">'
             f"<code>{endpoint}</code>"
-            f'<div class="diff-meta">risk {previous_score} -> {current_score} | confidence {escape(confidence)}</div>'
+            f'<div class="diff-meta">risk {previous_score} -> {current_score} | confidence {escape(confidence)} | relevance {_relevance_badge(relevance)}</div>'
             f'<div class="diff-meta">sources {sources} | source URLs {source_urls} | reasons {reason_count}</div>'
             f'<div class="diff-meta">reason preview {reason_preview}</div>'
             f"{delta_lines}"
@@ -913,15 +925,16 @@ def _diff_item(item: Dict[str, object]) -> str:
     endpoint = escape(str(item.get("endpoint", "")))
     score = escape(str(item.get("risk_score", 0)))
     confidence = escape(_diff_confidence(item))
+    relevance = _diff_relevance(item)
     sources = _diff_sources(item)
     tags = _diff_tags(item)
     source_urls = escape(str(_safe_int(item.get("source_urls_count", 0))))
     reason_count = escape(str(_safe_int(item.get("risk_reason_count", 0))))
     reason_preview = _diff_reason_preview(item)
     return (
-        '<div class="diff-item">'
+        f'<div class="diff-item relevance-{escape(relevance)}">'
         f"<code>{endpoint}</code>"
-        f'<div class="diff-meta">risk {score} | confidence {confidence} | sources {sources}</div>'
+        f'<div class="diff-meta">risk {score} | confidence {confidence} | relevance {_relevance_badge(relevance)} | sources {sources}</div>'
         f'<div class="diff-meta">tags {tags}</div>'
         f'<div class="diff-meta">source URLs {source_urls} | reasons {reason_count}</div>'
         f'<div class="diff-meta">reason preview {reason_preview}</div>'
@@ -945,6 +958,13 @@ def _diff_tags(item: Dict[str, object]) -> str:
 
 def _diff_confidence(item: Dict[str, object]) -> str:
     value = str(item.get("extraction_confidence", "medium")).strip().lower()
+    if value in {"high", "medium", "low"}:
+        return value
+    return "medium"
+
+
+def _diff_relevance(item: Dict[str, object]) -> str:
+    value = str(item.get("app_relevance", "medium")).strip().lower()
     if value in {"high", "medium", "low"}:
         return value
     return "medium"
@@ -1121,16 +1141,18 @@ def _compare_endpoint_table(title: str, items: list, empty: str) -> str:
         endpoint = escape(str(item.get("endpoint", "")))
         risk = _risk_badge(_safe_int(item.get("risk_score")))
         confidence = escape(_diff_confidence(item))
+        relevance = _diff_relevance(item)
         tags = _diff_tags(item)
         sources = _diff_sources(item)
         source_urls = escape(str(_safe_int(item.get("source_urls_count", 0))))
         reason_count = escape(str(_safe_int(item.get("risk_reason_count", 0))))
         reason_preview = _diff_reason_preview(item)
         rows.append(
-            "<tr>"
+            f'<tr class="relevance-{escape(relevance)}">'
             f"<td><code>{endpoint}</code></td>"
             f"<td>{risk}</td>"
             f"<td>{confidence}</td>"
+            f"<td>{_relevance_badge(relevance)}</td>"
             f"<td>{sources}</td>"
             f"<td>{tags}</td>"
             f"<td>source URLs {source_urls}<br>reasons {reason_count}<br>preview {reason_preview}</td>"
@@ -1139,7 +1161,7 @@ def _compare_endpoint_table(title: str, items: list, empty: str) -> str:
     return (
         f'<div class="compare-section"><h3>{escape(title)}</h3>'
         '<table class="compare-table"><thead><tr>'
-        "<th>Endpoint</th><th>Risk</th><th>Confidence</th><th>Sources</th><th>Tags</th><th>Evidence</th>"
+        "<th>Endpoint</th><th>Risk</th><th>Confidence</th><th>App Relevance</th><th>Sources</th><th>Tags</th><th>Evidence</th>"
         "</tr></thead><tbody>"
         + "".join(rows)
         + "</tbody></table></div>"
@@ -1162,6 +1184,7 @@ def _compare_changed_table(items: list, empty: str) -> str:
         sources = _diff_sources(data)
         tags = _diff_tags(data)
         confidence = _diff_confidence(data)
+        relevance = _diff_relevance(data)
         source_urls = _safe_int(data.get("source_urls_count", 0))
         reason_count = _safe_int(data.get("risk_reason_count", 0))
         reason_preview = _diff_reason_preview(data)
@@ -1170,10 +1193,10 @@ def _compare_changed_table(items: list, empty: str) -> str:
             + _changed_delta_lines(delta_map, use_blocks=True)
         )
         rows.append(
-            "<tr>"
+            f'<tr class="relevance-{escape(relevance)}">'
             f"<td><code>{endpoint}</code></td>"
             f"<td>{change_details}</td>"
-            f"<td>{current_badge}<br>confidence {escape(confidence)}<br>sources {sources}<br>tags {tags}<br>source URLs {escape(str(source_urls))}<br>reasons {escape(str(reason_count))}<br>preview {reason_preview}</td>"
+            f"<td>{current_badge}<br>confidence {escape(confidence)}<br>relevance {_relevance_badge(relevance)}<br>sources {sources}<br>tags {tags}<br>source URLs {escape(str(source_urls))}<br>reasons {escape(str(reason_count))}<br>preview {reason_preview}</td>"
             "</tr>"
         )
     return (
@@ -1193,6 +1216,9 @@ def _changed_delta_lines(delta_map: Dict[str, object], use_blocks: bool = False)
     confidence = delta_map.get("extraction_confidence")
     if isinstance(confidence, dict):
         lines.append(_delta_line("confidence", confidence))
+    relevance = delta_map.get("app_relevance")
+    if isinstance(relevance, dict):
+        lines.append(_delta_line("app relevance", relevance))
     tags = delta_map.get("tags")
     if isinstance(tags, dict):
         lines.append(_delta_list_line("tags", tags))
@@ -1228,3 +1254,8 @@ def _delta_list_line(label: str, payload: Dict[str, object]) -> str:
 
 def _risk_badge(score: int) -> str:
     return f'<span class="risk-badge">{escape(str(score))}</span>'
+
+
+def _relevance_badge(value: str) -> str:
+    relevance = _diff_relevance({"app_relevance": value})
+    return f'<span class="relevance-badge {escape(relevance)}">app relevance {escape(relevance)}</span>'

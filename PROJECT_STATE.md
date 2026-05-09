@@ -192,6 +192,10 @@ Docs/demo:
 - bug bounty safe usage guidance added across README and docs/USAGE
 - optional safe profile and low-impact defaults documented
 - request budget enforcement added; budget-exceeded scans return partial results with warning
+- third-party JavaScript noise suppression improved for documentation, repository, vendor telemetry, and malformed expression residue
+- app relevance scoring added to separate target-application likelihood from security risk score
+- manual candidate generation is relevance-aware and suppresses low relevance routes
+- dashboard and reports now surface app relevance alongside extraction confidence
 
 Automation:
 
