@@ -58,6 +58,14 @@ from routehawk.reports.html import render_html
 from routehawk.reports.markdown import render_markdown
 from routehawk.storage.sqlite import list_scan_records
 
+SCAN_MODE_CHOICES = [
+    "passive",
+    "bug-bounty-safe",
+    "local-lab",
+    "import-only",
+    "own-app-deep",
+]
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -83,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Apply low-impact safe settings for authorized bug bounty workflows. "
             "Always follow program scope, rate limits, and rules of engagement."
         ),
+    )
+    scan.add_argument(
+        "--scan-mode",
+        choices=SCAN_MODE_CHOICES,
+        help="Scan behavior preset. Use modes to make collection level explicit.",
     )
 
     extract_js = subparsers.add_parser("extract-js", help="Extract endpoints from a local JS file.")
@@ -160,6 +173,8 @@ def _scan(args: argparse.Namespace) -> int:
     validator = ScopeValidator(scope_domains, scope_cidrs)
     if not validator.is_url_allowed(target):
         raise SystemExit(f"Target is out of scope: {target}")
+    config_scan_mode = config.scan.scan_mode if config else "default"
+    effective_scan_mode = _resolve_scan_mode(args.safe_profile, args.scan_mode, config_scan_mode)
 
     result = asyncio.run(
         _run_scan(
@@ -168,6 +183,7 @@ def _scan(args: argparse.Namespace) -> int:
             validator,
             config,
             safe_profile=args.safe_profile,
+            scan_mode=effective_scan_mode,
             scope_normalization_notes=scope_notes,
         )
     )
@@ -193,24 +209,38 @@ async def _run_scan(
     validator: ScopeValidator,
     config,
     safe_profile: Optional[str] = None,
+    scan_mode: Optional[str] = None,
     scope_normalization_notes: Optional[list] = None,
 ) -> ScanResult:
     rules = config.rules if config else RulesConfig()
     options = config.scan if config else ScanOptions()
-    rules, options = _apply_safe_profile(rules, options, safe_profile)
+    effective_scan_mode = _resolve_scan_mode(
+        safe_profile,
+        scan_mode,
+        options.scan_mode if hasattr(options, "scan_mode") else "default",
+    )
+    rules, options, mode_flags = _apply_scan_mode(rules, options, effective_scan_mode)
     suppression = config.suppression if config else SuppressionConfig()
-    client = ScopeSafeHttpClient(validator, rules)
     result = ScanResult(
         target=target,
         scope=scope_domains,
+        scan_mode=effective_scan_mode,
         target_fingerprint=target_fingerprint(target),
         scope_fingerprint=scope_fingerprint(scope_domains),
         scope_normalization_notes=list(scope_normalization_notes or []),
-        source_coverage=_initial_source_coverage(options),
+        source_coverage=_initial_source_coverage(options, rules, effective_scan_mode),
     )
     for note in result.scope_normalization_notes:
         if note not in result.warnings:
             result.warnings.append(note)
+
+    if effective_scan_mode == "import-only":
+        result.warnings.append(
+            "Import-only mode does not perform live HTTP requests. Use import-file to analyze existing tool outputs."
+        )
+        return result
+
+    client = ScopeSafeHttpClient(validator, rules)
     root_url = _origin(target)
     budget_exceeded = False
 
@@ -289,9 +319,10 @@ async def _run_scan(
                 await _collect_openapi(client, root_url, result)
             if options.check_common_metadata:
                 _set_source_coverage_checked(result, "security_txt")
-                _set_source_coverage_checked(result, "graphql")
                 await _collect_security_txt(client, root_url, result)
-                await _collect_graphql(client, root_url, result, suppression)
+                if mode_flags.get("graphql_probe_enabled", True):
+                    _set_source_coverage_checked(result, "graphql")
+                    await _collect_graphql(client, root_url, result, suppression)
         except RequestBudgetExceeded:
             budget_exceeded = True
 
@@ -845,6 +876,7 @@ def _report(args: argparse.Namespace) -> int:
     result = ScanResult(
         target=data.get("target", "unknown"),
         scope=data.get("scope", []),
+        scan_mode=str(data.get("scan_mode", "default")),
         target_fingerprint=str(data.get("target_fingerprint", "")),
         scope_fingerprint=str(data.get("scope_fingerprint", "")),
         scope_normalization_notes=[str(item) for item in data.get("scope_normalization_notes", []) if item is not None]
@@ -1107,6 +1139,7 @@ def _result_to_json(result: ScanResult) -> dict:
     return {
         "target": result.target,
         "scope": result.scope,
+        "scan_mode": result.scan_mode,
         "target_fingerprint": result.target_fingerprint,
         "scope_fingerprint": result.scope_fingerprint,
         "scope_normalization_notes": result.scope_normalization_notes,
@@ -1127,8 +1160,14 @@ def _safe_int(value: object) -> int:
         return 0
 
 
-def _initial_source_coverage(options: ScanOptions) -> dict:
+def _initial_source_coverage(options: ScanOptions, rules: RulesConfig, scan_mode: str) -> dict:
     return {
+        "runtime": {
+            "scan_mode": scan_mode,
+            "request_budget_per_scan": int(rules.request_budget_per_scan),
+            "max_rps_per_host": int(rules.max_rps_per_host),
+            "max_concurrency": int(rules.max_concurrency),
+        },
         "homepage": {"fetched": False, "status": None},
         "javascript": {
             "discovered": 0,
@@ -1202,22 +1241,154 @@ def _apply_safe_profile(
 ) -> tuple[RulesConfig, ScanOptions]:
     if safe_profile != "bug-bounty":
         return rules, options
-    return (
-        replace(
-            rules,
-            max_rps_per_host=1,
-            max_concurrency=2,
-            max_retries=1,
-            retry_backoff_seconds=1.0,
-            respect_retry_after=True,
-            request_budget_per_scan=500,
-        ),
-        replace(
-            options,
-            check_auth_behavior=False,
-            auth_probe_limit=0,
-        ),
-    )
+    updated_rules, updated_options, _ = _apply_scan_mode(rules, options, "bug-bounty-safe")
+    return updated_rules, updated_options
+
+
+def _resolve_scan_mode(
+    safe_profile: Optional[str],
+    scan_mode: Optional[str],
+    config_scan_mode: Optional[str] = None,
+) -> str:
+    candidate = (scan_mode or "").strip().lower()
+    config_mode = (config_scan_mode or "default").strip().lower()
+    if safe_profile == "bug-bounty":
+        if candidate and candidate != "bug-bounty-safe":
+            raise SystemExit(
+                f"--safe-profile bug-bounty cannot be combined with scan mode {candidate}"
+            )
+        return "bug-bounty-safe"
+    if candidate in SCAN_MODE_CHOICES:
+        return candidate
+    if config_mode in SCAN_MODE_CHOICES:
+        return config_mode
+    return "default"
+
+
+def _apply_scan_mode(
+    rules: RulesConfig,
+    options: ScanOptions,
+    scan_mode: str,
+) -> tuple[RulesConfig, ScanOptions, dict]:
+    mode = (scan_mode or "default").strip().lower()
+    flags = {"graphql_probe_enabled": True}
+    if mode == "passive":
+        flags["graphql_probe_enabled"] = False
+        return (
+            replace(
+                rules,
+                max_rps_per_host=1,
+                max_concurrency=1,
+                max_retries=1,
+                retry_backoff_seconds=1.0,
+                respect_retry_after=True,
+                request_budget_per_scan=100,
+            ),
+            replace(
+                options,
+                scan_mode=mode,
+                download_javascript=False,
+                parse_openapi=False,
+                parse_robots=True,
+                parse_sitemap=True,
+                check_common_metadata=True,
+                check_auth_behavior=False,
+                auth_probe_limit=0,
+            ),
+            flags,
+        )
+    if mode == "bug-bounty-safe":
+        return (
+            replace(
+                rules,
+                max_rps_per_host=1,
+                max_concurrency=2,
+                max_retries=1,
+                retry_backoff_seconds=1.0,
+                respect_retry_after=True,
+                request_budget_per_scan=500,
+            ),
+            replace(
+                options,
+                scan_mode=mode,
+                download_javascript=True,
+                parse_openapi=True,
+                parse_robots=True,
+                parse_sitemap=True,
+                check_common_metadata=True,
+                check_auth_behavior=False,
+                auth_probe_limit=0,
+            ),
+            flags,
+        )
+    if mode == "local-lab":
+        return (
+            replace(
+                rules,
+                max_rps_per_host=5,
+                max_concurrency=5,
+                request_budget_per_scan=1000,
+            ),
+            replace(
+                options,
+                scan_mode=mode,
+                download_javascript=True,
+                parse_openapi=True,
+                parse_robots=True,
+                parse_sitemap=True,
+                check_common_metadata=True,
+                check_auth_behavior=False,
+                auth_probe_limit=0,
+            ),
+            flags,
+        )
+    if mode == "import-only":
+        flags["graphql_probe_enabled"] = False
+        return (
+            replace(
+                rules,
+                max_rps_per_host=1,
+                max_concurrency=1,
+                max_retries=1,
+                retry_backoff_seconds=1.0,
+                respect_retry_after=True,
+                request_budget_per_scan=100,
+            ),
+            replace(
+                options,
+                scan_mode=mode,
+                download_javascript=False,
+                parse_openapi=False,
+                parse_robots=False,
+                parse_sitemap=False,
+                check_common_metadata=False,
+                check_auth_behavior=False,
+                auth_probe_limit=0,
+            ),
+            flags,
+        )
+    if mode == "own-app-deep":
+        return (
+            replace(
+                rules,
+                max_rps_per_host=5,
+                max_concurrency=5,
+                request_budget_per_scan=2000,
+            ),
+            replace(
+                options,
+                scan_mode=mode,
+                download_javascript=True,
+                parse_openapi=True,
+                parse_robots=True,
+                parse_sitemap=True,
+                check_common_metadata=True,
+                check_auth_behavior=False,
+                auth_probe_limit=0,
+            ),
+            flags,
+        )
+    return replace(rules), replace(options, scan_mode="default"), flags
 
 
 if __name__ == "__main__":

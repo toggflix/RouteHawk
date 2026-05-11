@@ -85,3 +85,13 @@ RouteHawk is a local-first endpoint intelligence workspace for authorized securi
 - document manual review tasks
 
 without crossing into exploitation or destructive behavior.
+
+## Scan Mode UX
+
+RouteHawk uses explicit scan modes to make behavior understandable before a run starts:
+
+- mode presets are selectable in CLI and dashboard
+- the selected mode is shown in report and dashboard output
+- low-impact presets remain the default posture for authorized public recon
+
+This keeps collection intent explicit and helps users interpret low-result scans correctly.

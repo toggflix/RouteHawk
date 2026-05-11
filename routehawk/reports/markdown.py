@@ -12,6 +12,7 @@ def render_markdown(result: ScanResult) -> str:
         "",
         f"Target: `{result.target}`",
         f"Scope: `{', '.join(result.scope) if result.scope else 'not recorded'}`",
+        f"Mode used: `{result.scan_mode}`",
         "",
         "## Executive Summary",
         "",
@@ -158,12 +159,14 @@ def _scan_explanation_lines(result: ScanResult, coverage: dict, high_risk_count:
     homepage = _coverage_section(coverage, "homepage")
     javascript = _coverage_section(coverage, "javascript")
     auth_behavior = _coverage_section(coverage, "auth_behavior")
+    runtime = _coverage_section(coverage, "runtime")
     found_endpoints = len(result.endpoints)
     findings = len(result.findings)
     discovered = _safe_int(javascript.get("discovered"))
     downloaded = _safe_int(javascript.get("downloaded"))
     skipped = _safe_int(javascript.get("skipped_out_of_scope"))
 
+    lines.append(f"- Scan mode: `{result.scan_mode}`.")
     if homepage.get("fetched"):
         lines.append(f"- Target fetched successfully (status `{_status_text(homepage.get('status'))}`).")
     else:
@@ -189,10 +192,17 @@ def _scan_explanation_lines(result: ScanResult, coverage: dict, high_risk_count:
     else:
         lines.append(f"- Auth behavior checks were enabled with probe limit `{_safe_int(auth_behavior.get('probe_limit'))}`.")
 
+    budget = _safe_int(runtime.get("request_budget_per_scan"))
+    if budget > 0:
+        lines.append(f"- Request budget per scan: `{budget}`.")
     if _has_budget_warning(result.warnings):
         lines.append("- Request budget was enabled and the scan stopped early after reaching the budget.")
     else:
         lines.append("- Request budget was enabled.")
+    if result.scan_mode == "import-only":
+        lines.append("- Import-only mode did not perform live HTTP requests.")
+    if result.scan_mode == "passive":
+        lines.append("- Passive mode skipped JavaScript downloads and GraphQL candidate probes.")
 
     for warning in result.warnings:
         text = str(warning)

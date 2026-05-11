@@ -138,7 +138,14 @@ class ReportTests(unittest.TestCase):
         result = ScanResult(
             target="https://example.com",
             scope=["example.com"],
+            scan_mode="passive",
             source_coverage={
+                "runtime": {
+                    "scan_mode": "passive",
+                    "request_budget_per_scan": 100,
+                    "max_rps_per_host": 1,
+                    "max_concurrency": 1,
+                },
                 "homepage": {"fetched": True, "status": 200},
                 "javascript": {"discovered": 2, "downloaded": 0, "skipped_out_of_scope": 2, "failed": 0},
                 "robots": {"checked": True, "status": 200},
@@ -172,18 +179,50 @@ class ReportTests(unittest.TestCase):
 
         self.assertIn("JavaScript Files", markdown)
         self.assertIn("security.txt", markdown)
+        self.assertIn("Mode used: `passive`", markdown)
         self.assertIn("Scan Explanation", markdown)
         self.assertNotIn("No JavaScript assets were discovered on the fetched page.", markdown)
         self.assertIn("JavaScript assets were discovered, but none were downloaded.", markdown)
         self.assertIn("Skipped `2` JavaScript assets because they were outside configured scope.", markdown)
         self.assertIn("Auth behavior checks were disabled.", markdown)
+        self.assertIn("Passive mode skipped JavaScript downloads and GraphQL candidate probes.", markdown)
         self.assertIn("JavaScript Files", html)
         self.assertIn("Metadata", html)
+        self.assertIn("Mode used:", html)
         self.assertIn("Source Coverage", html)
         self.assertIn("Scan Explanation", html)
         self.assertIn("JavaScript assets were discovered, but none were downloaded.", html)
         self.assertIn("Skipped 2 JavaScript assets because they were outside configured scope.", html)
         self.assertIn("Auth behavior checks were disabled.", html)
+        self.assertIn("Passive mode skipped JavaScript downloads and GraphQL candidate probes.", html)
+
+    def test_reports_show_import_only_warning_and_mode(self):
+        result = ScanResult(
+            target="https://example.com",
+            scope=["example.com"],
+            scan_mode="import-only",
+            warnings=[
+                "Import-only mode does not perform live HTTP requests. Use import-file to analyze existing tool outputs."
+            ],
+            source_coverage={
+                "runtime": {
+                    "scan_mode": "import-only",
+                    "request_budget_per_scan": 100,
+                    "max_rps_per_host": 1,
+                    "max_concurrency": 1,
+                },
+                "auth_behavior": {"enabled": False, "probe_limit": 0},
+                "javascript": {"discovered": 0, "downloaded": 0, "skipped_out_of_scope": 0, "failed": 0},
+                "homepage": {"fetched": False, "status": None},
+            },
+        )
+        markdown = render_markdown(result)
+        html = render_html(result)
+        self.assertIn("Mode used: `import-only`", markdown)
+        self.assertIn("Import-only mode did not perform live HTTP requests.", markdown)
+        self.assertIn("Import-only mode does not perform live HTTP requests", markdown)
+        self.assertIn("Mode used:", html)
+        self.assertIn("Import-only mode did not perform live HTTP requests.", html)
 
     def test_graphql_candidate_uses_graphql_checklist(self):
         endpoint = Endpoint(

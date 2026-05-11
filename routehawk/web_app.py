@@ -107,6 +107,7 @@ class RouteHawkWebApp:
         form = parse_qs(body)
         target = _form_value(form, "target")
         scope_text = _form_value(form, "scope")
+        scan_mode = _form_value(form, "scan_mode") or "bug-bounty-safe"
 
         if not target or not scope_text:
             self._redirect(request, "/?error=missing-target-or-scope")
@@ -114,7 +115,7 @@ class RouteHawkWebApp:
 
         scope_domains, scope_notes = _split_scope(scope_text)
         try:
-            result = self._scan(target, scope_domains, scope_notes)
+            result = self._scan(target, scope_domains, scope_notes, scan_mode)
         except Exception as exc:
             self._write_error(target, scope_domains, str(exc))
             self._redirect(request, "/?error=scan-failed")
@@ -123,7 +124,7 @@ class RouteHawkWebApp:
         self._write_outputs(result)
         self._redirect(request, "/?scan=complete")
 
-    def _scan(self, target: str, scope_domains: list, scope_notes: list):
+    def _scan(self, target: str, scope_domains: list, scope_notes: list, scan_mode: str):
         validator = ScopeValidator(scope_domains)
         decision = validator.explain_url(target)
         if not decision.allowed:
@@ -133,7 +134,7 @@ class RouteHawkWebApp:
             program="routehawk-dashboard",
             scope=ScopeConfig(domains=scope_domains),
             rules=RulesConfig(timeout_seconds=5, max_rps_per_host=5),
-            scan=ScanOptions(),
+            scan=ScanOptions(scan_mode=scan_mode),
             targets=[target],
         )
         return asyncio.run(
@@ -142,6 +143,7 @@ class RouteHawkWebApp:
                 sorted(set(scope_domains)),
                 validator,
                 config,
+                scan_mode=scan_mode,
                 scope_normalization_notes=scope_notes,
             )
         )
@@ -179,6 +181,7 @@ class RouteHawkWebApp:
             "run_id": run_id,
             "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
             "target": result.target,
+            "scan_mode": result.scan_mode,
             "target_fingerprint": current_target_fingerprint,
             "scope": result.scope,
             "scope_fingerprint": current_scope_fingerprint,
@@ -276,6 +279,8 @@ class RouteHawkWebApp:
         history = _history_panel(runs, latest_run_id)
         target_value = escape(summary.get("target", "http://localhost:8088") if summary else "http://localhost:8088")
         scope_value = escape(", ".join(summary.get("scope", ["localhost"])) if summary else "localhost")
+        scan_mode_value = str(summary.get("scan_mode", "bug-bounty-safe")) if summary else "bug-bounty-safe"
+        mode_options = _scan_mode_options(scan_mode_value)
         status_banner = _status_banner(query or {}, summary, error)
 
         return f"""<!doctype html>
@@ -549,6 +554,13 @@ class RouteHawkWebApp:
             <textarea id="scope" name="scope" required>{scope_value}</textarea>
             <div class="hint">Comma or newline separated. Example: <code>example.com, *.example.com</code></div>
           </div>
+          <div class="field">
+            <label for="scan_mode">Scan mode</label>
+            <select id="scan_mode" name="scan_mode">
+              {mode_options}
+            </select>
+            <div class="hint" id="scan-mode-description"></div>
+          </div>
           <button id="scan-submit" type="submit" data-default-label="Run scope-safe scan">Run scope-safe scan</button>
         </form>
       </section>
@@ -624,6 +636,23 @@ class RouteHawkWebApp:
     (function () {{
       const form = document.getElementById("scan-form");
       const button = document.getElementById("scan-submit");
+      const scanMode = document.getElementById("scan_mode");
+      const scanModeDescription = document.getElementById("scan-mode-description");
+      const modeMessages = {{
+        "passive": "Passive: minimal public recon, no JS download, no GraphQL candidate probes.",
+        "bug-bounty-safe": "Bug bounty safe: low-impact public recon, auth probes disabled, request budget enabled.",
+        "local-lab": "Local lab: relaxed settings for local demo/lab targets.",
+        "import-only": "Import only: no live HTTP requests; use import-file for existing outputs.",
+        "own-app-deep": "Own app deep: broader collection for systems you own."
+      }};
+      function updateModeDescription() {{
+        if (!scanMode || !scanModeDescription) return;
+        scanModeDescription.textContent = modeMessages[scanMode.value] || "";
+      }}
+      if (scanMode) {{
+        scanMode.addEventListener("change", updateModeDescription);
+        updateModeDescription();
+      }}
       if (!form || !button) return;
       form.addEventListener("submit", () => {{
         button.disabled = true;
@@ -1023,9 +1052,11 @@ def _last_run_panel(summary: Dict[str, object], error: str) -> str:
     cards = "".join(f'<div class="metric"><span>{label}</span><strong>{value}</strong></div>' for label, value in metrics)
     generated = escape(str(summary.get("generated_at", "unknown")))
     target = escape(str(summary.get("target", "unknown")))
+    scan_mode = escape(str(summary.get("scan_mode", "default")))
     return f"""
     <p class="hint">Generated at {generated}</p>
     <p>Target: <code>{target}</code></p>
+    <p>Mode used: <code>{scan_mode}</code></p>
     <div class="metrics">{cards}</div>
     <div class="actions">
       <a href="/reports/latest.html">HTML report</a>
@@ -1088,6 +1119,8 @@ def _dashboard_scan_explanation_panel(summary: Dict[str, object], diff: Dict[str
     downloaded = _safe_int(javascript.get("downloaded"))
     skipped = _safe_int(javascript.get("skipped_out_of_scope"))
     lines = []
+    mode = str(summary.get("scan_mode", "default")).strip().lower()
+    lines.append(f"Scan mode: {mode}.")
     if homepage.get("fetched"):
         lines.append(f"Target fetched successfully (status {_status_word(homepage.get('status'))}).")
     else:
@@ -1111,6 +1144,10 @@ def _dashboard_scan_explanation_panel(summary: Dict[str, object], diff: Dict[str
         lines.append("Request budget was enabled and the scan stopped early after reaching the budget.")
     else:
         lines.append("Request budget was enabled.")
+    if mode == "import-only":
+        lines.append("Import-only mode did not perform live HTTP requests.")
+    if mode == "passive":
+        lines.append("Passive mode skipped JavaScript downloads and GraphQL candidate probes.")
     baseline_message = str(diff.get("baseline_message", "")).strip() if isinstance(diff, dict) else ""
     if baseline_message:
         lines.append(baseline_message)
@@ -1408,6 +1445,7 @@ def _scan_result_from_payload(payload: Dict[str, object]) -> ScanResult:
         scope=[str(item) for item in payload.get("scope", []) if item is not None]
         if isinstance(payload.get("scope"), list)
         else [],
+        scan_mode=str(payload.get("scan_mode", "default")),
         target_fingerprint=str(payload.get("target_fingerprint", "")),
         scope_fingerprint=str(payload.get("scope_fingerprint", "")),
         scope_normalization_notes=[
@@ -1465,6 +1503,24 @@ def _summary_has_budget_warning(summary: Dict[str, object]) -> bool:
     if isinstance(warnings, list):
         return any("Request budget exceeded; scan stopped early." in str(item) for item in warnings)
     return False
+
+
+def _scan_mode_options(selected: str) -> str:
+    values = [
+        ("bug-bounty-safe", "Bug bounty safe"),
+        ("passive", "Passive"),
+        ("local-lab", "Local lab"),
+        ("import-only", "Import only"),
+        ("own-app-deep", "Own app deep"),
+    ]
+    chosen = selected.strip().lower()
+    rows = []
+    for value, label in values:
+        flag = " selected" if value == chosen else ""
+        rows.append(
+            f'<option value="{escape(value, quote=True)}"{flag}>{escape(label)}</option>'
+        )
+    return "".join(rows)
 
 
 def _compare_link(href: str) -> str:

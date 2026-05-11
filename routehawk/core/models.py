@@ -26,6 +26,7 @@ class RulesConfig:
 
 @dataclass(frozen=True)
 class ScanOptions:
+    scan_mode: str = "default"
     passive_first: bool = True
     download_javascript: bool = True
     parse_openapi: bool = True
@@ -131,6 +132,7 @@ class MetadataRecord:
 class ScanResult:
     target: str
     scope: List[str]
+    scan_mode: str = "default"
     target_fingerprint: str = ""
     scope_fingerprint: str = ""
     scope_normalization_notes: List[str] = field(default_factory=list)

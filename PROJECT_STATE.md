@@ -208,6 +208,8 @@ Docs/demo:
 - skipped out-of-scope JavaScript visibility added in reports and dashboard explanation
 - dashboard and report scan explanation panels added to explain low-result scans
 - dashboard wording cleanup applied for relevance/confidence labels
+- scan mode presets added (passive, bug-bounty-safe, local-lab, import-only, own-app-deep)
+- dashboard scan form now includes scan mode selector and mode explanation text
 
 Automation:
 
@@ -233,7 +235,7 @@ Demo lab:
 Latest test command passed:
 
 ```text
-110 tests OK
+119 tests OK
 ```
 
 Latest compile check passed:

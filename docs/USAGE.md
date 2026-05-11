@@ -158,6 +158,27 @@ py -m routehawk report --input results.json --out report.html
 py -m routehawk report --input results.json --out report.md
 ```
 
+## Scan Modes
+
+Use `--scan-mode` to select explicit collection behavior:
+
+- `bug-bounty-safe`: low-impact public recon; auth probes disabled; request budget enabled.
+- `passive`: minimal public recon; JavaScript download disabled; GraphQL candidate probes disabled.
+- `local-lab`: relaxed settings for local demo/lab targets.
+- `import-only`: performs no live HTTP requests; use `import-file` for existing outputs.
+- `own-app-deep`: broader collection preset for systems you own.
+
+Examples:
+
+```powershell
+py -m routehawk scan --config config.local-lab.yaml --scan-mode bug-bounty-safe --out safe-results.json
+py -m routehawk scan --config config.local-lab.yaml --scan-mode passive --out passive-results.json
+py -m routehawk scan --config config.local-lab.yaml --scan-mode import-only --out import-only-results.json
+```
+
+`--safe-profile bug-bounty` remains supported and maps to `bug-bounty-safe`.
+Do not combine `--safe-profile bug-bounty` with a conflicting scan mode.
+
 For authorized bug bounty workflows, you can apply the built-in low-impact profile:
 
 ```powershell
@@ -221,6 +242,9 @@ Normalization notes are included in scan warnings to make scope cleaning explici
 - Programs may define stricter request and rate limits; always follow the specific program policy.
 - `request_budget_per_scan` sets an upper bound for total scan requests; when exceeded, RouteHawk stops early and returns partial results with a warning.
 - Request budgeting does not replace program rate limits or rules; you must still follow the program policy.
+- `local-lab` mode is for local/demo environments and is not recommended for live bug bounty targets.
+- `own-app-deep` is only for applications and infrastructure you own or explicitly control.
+- `import-only` performs no live HTTP requests and is safe for offline analysis workflows.
 
 Recommended low-impact config:
 

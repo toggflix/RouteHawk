@@ -17,6 +17,7 @@
 - dashboard endpoint filters for relevance, confidence, source, and manual-candidate status
 - request budget enforcement
 - bug bounty safe profile
+- scan mode presets (passive, bug-bounty-safe, local-lab, import-only, own-app-deep)
 - importers: httpx, subfinder, nuclei, nmap
 - GitHub Actions CI and local-lab smoke workflows
 
@@ -24,6 +25,7 @@
 
 - dashboard filters polish
 - first-party vs third-party source classification
+- stronger workspace/program profiles
 - README/dashboard screenshots from the local demo lab
 - v0.2 release packaging
 
@@ -33,7 +35,6 @@
 - Burp sitemap importer
 - Postman collection importer
 - finding notes/manual review notes
-- stronger workspace/program profiles
 - coverage/lint CI
 
 ## Later

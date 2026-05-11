@@ -47,6 +47,7 @@ def load_config(path: str) -> RouteHawkConfig:
             request_budget_per_scan=int(rules_data.get("request_budget_per_scan", 500)),
         ),
         scan=ScanOptions(
+            scan_mode=str(scan_data.get("scan_mode", scan_data.get("mode", "default"))),
             passive_first=bool(scan_data.get("passive_first", True)),
             download_javascript=bool(scan_data.get("download_javascript", True)),
             parse_openapi=bool(scan_data.get("parse_openapi", True)),

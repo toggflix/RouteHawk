@@ -219,6 +219,7 @@ def render_html(result: ScanResult, triage_load_url: str = "", triage_update_url
     <p>Scope-safe API and JavaScript reconnaissance summary</p>
     <p><strong>Target:</strong> <code>{escape(result.target)}</code></p>
     <p><strong>Scope:</strong> {escape(", ".join(result.scope) if result.scope else "not recorded")}</p>
+    <p><strong>Mode used:</strong> <code>{escape(result.scan_mode)}</code></p>
   </header>
   <main>
     <section>
@@ -757,6 +758,7 @@ def _source_coverage(result: ScanResult) -> dict:
 
 
 def _source_coverage_rows(coverage: dict) -> str:
+    runtime = _coverage_section(coverage, "runtime")
     homepage = _coverage_section(coverage, "homepage")
     javascript = _coverage_section(coverage, "javascript")
     robots = _coverage_section(coverage, "robots")
@@ -766,6 +768,10 @@ def _source_coverage_rows(coverage: dict) -> str:
     graphql = _coverage_section(coverage, "graphql")
     auth_behavior = _coverage_section(coverage, "auth_behavior")
     rows = [
+        (
+            "Runtime",
+            f"mode {str(runtime.get('scan_mode', 'default'))} | request budget {_safe_int(runtime.get('request_budget_per_scan'))} | max rps {_safe_int(runtime.get('max_rps_per_host'))} | max concurrency {_safe_int(runtime.get('max_concurrency'))}",
+        ),
         ("Homepage", f"fetched {_bool_text(homepage.get('fetched'))} | status {_status_text(homepage.get('status'))}"),
         (
             "JavaScript",
@@ -799,11 +805,13 @@ def _scan_explanation_items(result: ScanResult, coverage: dict, high_risk_count:
     homepage = _coverage_section(coverage, "homepage")
     javascript = _coverage_section(coverage, "javascript")
     auth_behavior = _coverage_section(coverage, "auth_behavior")
+    runtime = _coverage_section(coverage, "runtime")
     discovered = _safe_int(javascript.get("discovered"))
     downloaded = _safe_int(javascript.get("downloaded"))
     skipped = _safe_int(javascript.get("skipped_out_of_scope"))
 
     lines = []
+    lines.append(f"Scan mode: {result.scan_mode}.")
     if homepage.get("fetched"):
         lines.append(f"Target fetched successfully (status {_status_text(homepage.get('status'))}).")
     else:
@@ -823,10 +831,17 @@ def _scan_explanation_items(result: ScanResult, coverage: dict, high_risk_count:
         lines.append("Auth behavior checks were disabled.")
     else:
         lines.append(f"Auth behavior checks were enabled with probe limit {_safe_int(auth_behavior.get('probe_limit'))}.")
+    budget = _safe_int(runtime.get("request_budget_per_scan"))
+    if budget > 0:
+        lines.append(f"Request budget per scan: {budget}.")
     if _has_budget_warning(result.warnings):
         lines.append("Request budget was enabled and the scan stopped early after reaching the budget.")
     else:
         lines.append("Request budget was enabled.")
+    if result.scan_mode == "import-only":
+        lines.append("Import-only mode did not perform live HTTP requests.")
+    if result.scan_mode == "passive":
+        lines.append("Passive mode skipped JavaScript downloads and GraphQL candidate probes.")
     for warning in result.warnings:
         text = str(warning)
         if text.startswith("No previous scan found for this target/scope"):

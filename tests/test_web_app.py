@@ -181,6 +181,12 @@ class WebAppTests(unittest.TestCase):
 
             self.assertIn('id="scan-form"', html)
             self.assertIn('id="scan-submit"', html)
+            self.assertIn('id="scan_mode"', html)
+            self.assertIn('value="bug-bounty-safe" selected', html)
+            self.assertIn("Bug bounty safe", html)
+            self.assertIn("Passive", html)
+            self.assertIn("Import only", html)
+            self.assertIn("scan-mode-description", html)
             self.assertIn('button.disabled = true', html)
             self.assertIn('button.textContent = "Scanning..."', html)
 
@@ -557,7 +563,14 @@ class WebAppTests(unittest.TestCase):
             result = ScanResult(
                 target="https://example.com",
                 scope=["example.com"],
+                scan_mode="bug-bounty-safe",
                 source_coverage={
+                    "runtime": {
+                        "scan_mode": "bug-bounty-safe",
+                        "request_budget_per_scan": 500,
+                        "max_rps_per_host": 1,
+                        "max_concurrency": 2,
+                    },
                     "homepage": {"fetched": True, "status": 200},
                     "javascript": {"discovered": 2, "downloaded": 0, "skipped_out_of_scope": 2, "failed": 0},
                     "robots": {"checked": True, "status": 200},
@@ -573,6 +586,8 @@ class WebAppTests(unittest.TestCase):
 
             self.assertIn("Source Coverage", html)
             self.assertIn("Scan Explanation", html)
+            self.assertIn("Mode used", html)
+            self.assertIn("bug-bounty-safe", html)
             self.assertIn("JavaScript assets were discovered, but none were downloaded.", html)
             self.assertIn("Skipped 2 JavaScript assets because they were outside configured scope.", html)
             self.assertIn("Auth behavior checks were disabled.", html)
@@ -583,7 +598,14 @@ class WebAppTests(unittest.TestCase):
             result = ScanResult(
                 target="https://example.com",
                 scope=["example.com"],
+                scan_mode="passive",
                 source_coverage={
+                    "runtime": {
+                        "scan_mode": "passive",
+                        "request_budget_per_scan": 100,
+                        "max_rps_per_host": 1,
+                        "max_concurrency": 1,
+                    },
                     "homepage": {"fetched": True, "status": 200},
                     "javascript": {"discovered": 0, "downloaded": 0, "skipped_out_of_scope": 0, "failed": 0},
                     "auth_behavior": {"enabled": False, "probe_limit": 0},
@@ -592,6 +614,7 @@ class WebAppTests(unittest.TestCase):
             app._write_outputs(result)
             html = app._dashboard({"scan": ["complete"]})
             self.assertIn("No previous scan found for this target/scope. This run is now the baseline.", html)
+            self.assertIn("Passive mode skipped JavaScript downloads and GraphQL candidate probes.", html)
 
     def test_rebuilds_scan_result_from_json_payload(self):
         result = _scan_result_from_payload(
