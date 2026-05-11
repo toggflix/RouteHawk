@@ -27,7 +27,7 @@ from routehawk.analyzers.route_classifier import classify_endpoint
 from routehawk.analyzers.route_normalizer import normalize_path
 from routehawk.analyzers.security_headers import missing_security_headers
 from routehawk.analyzers.tech_fingerprint import fingerprint_headers
-from routehawk.collectors.html_assets import extract_javascript_assets
+from routehawk.collectors.html_assets import extract_javascript_asset_summary
 from routehawk.collectors.javascript_files import download_javascript
 from routehawk.collectors.live_hosts import _extract_title
 from routehawk.collectors.openapi import COMMON_OPENAPI_PATHS, endpoints_from_openapi
@@ -36,7 +36,7 @@ from routehawk.collectors.robots import parse_robots_txt
 from routehawk.collectors.security_txt import parse_security_txt
 from routehawk.collectors.sitemap import parse_sitemap_xml
 from routehawk.core.config import load_config
-from routehawk.core.diff import build_endpoint_diff
+from routehawk.core.diff import build_endpoint_diff, scope_fingerprint, target_fingerprint
 from routehawk.core.http_client import RequestBudgetExceeded, ScopeSafeHttpClient
 from routehawk.core.models import (
     Asset,
@@ -49,7 +49,7 @@ from routehawk.core.models import (
     ScanResult,
     SuppressionConfig,
 )
-from routehawk.core.scope import ScopeValidator
+from routehawk.core.scope import ScopeValidator, normalize_scope_entries
 from routehawk.importers.httpx_json import import_httpx_json
 from routehawk.importers.nmap_xml import import_nmap_xml
 from routehawk.importers.nuclei_json import import_nuclei_json
@@ -57,6 +57,14 @@ from routehawk.importers.subfinder_json import import_subfinder_json
 from routehawk.reports.html import render_html
 from routehawk.reports.markdown import render_markdown
 from routehawk.storage.sqlite import list_scan_records
+
+SCAN_MODE_CHOICES = [
+    "passive",
+    "bug-bounty-safe",
+    "local-lab",
+    "import-only",
+    "own-app-deep",
+]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -83,6 +91,11 @@ def build_parser() -> argparse.ArgumentParser:
             "Apply low-impact safe settings for authorized bug bounty workflows. "
             "Always follow program scope, rate limits, and rules of engagement."
         ),
+    )
+    scan.add_argument(
+        "--scan-mode",
+        choices=SCAN_MODE_CHOICES,
+        help="Scan behavior preset. Use modes to make collection level explicit.",
     )
 
     extract_js = subparsers.add_parser("extract-js", help="Extract endpoints from a local JS file.")
@@ -151,22 +164,27 @@ def _scan(args: argparse.Namespace) -> int:
     if not target:
         raise SystemExit("scan requires --target or a config file with scan target support")
 
-    scope_domains = list(args.scope)
+    scope_inputs = list(args.scope)
     if config:
-        scope_domains.extend(config.scope.domains)
+        scope_inputs.extend(config.scope.domains)
+    scope_domains, scope_notes = normalize_scope_entries(scope_inputs)
 
     scope_cidrs = config.scope.cidrs if config else []
     validator = ScopeValidator(scope_domains, scope_cidrs)
     if not validator.is_url_allowed(target):
         raise SystemExit(f"Target is out of scope: {target}")
+    config_scan_mode = config.scan.scan_mode if config else "default"
+    effective_scan_mode = _resolve_scan_mode(args.safe_profile, args.scan_mode, config_scan_mode)
 
     result = asyncio.run(
         _run_scan(
             target,
-            sorted(set(scope_domains)),
+            scope_domains,
             validator,
             config,
             safe_profile=args.safe_profile,
+            scan_mode=effective_scan_mode,
+            scope_normalization_notes=scope_notes,
         )
     )
     output = _result_to_json(result)
@@ -191,13 +209,38 @@ async def _run_scan(
     validator: ScopeValidator,
     config,
     safe_profile: Optional[str] = None,
+    scan_mode: Optional[str] = None,
+    scope_normalization_notes: Optional[list] = None,
 ) -> ScanResult:
     rules = config.rules if config else RulesConfig()
     options = config.scan if config else ScanOptions()
-    rules, options = _apply_safe_profile(rules, options, safe_profile)
+    effective_scan_mode = _resolve_scan_mode(
+        safe_profile,
+        scan_mode,
+        options.scan_mode if hasattr(options, "scan_mode") else "default",
+    )
+    rules, options, mode_flags = _apply_scan_mode(rules, options, effective_scan_mode)
     suppression = config.suppression if config else SuppressionConfig()
+    result = ScanResult(
+        target=target,
+        scope=scope_domains,
+        scan_mode=effective_scan_mode,
+        target_fingerprint=target_fingerprint(target),
+        scope_fingerprint=scope_fingerprint(scope_domains),
+        scope_normalization_notes=list(scope_normalization_notes or []),
+        source_coverage=_initial_source_coverage(options, rules, effective_scan_mode),
+    )
+    for note in result.scope_normalization_notes:
+        if note not in result.warnings:
+            result.warnings.append(note)
+
+    if effective_scan_mode == "import-only":
+        result.warnings.append(
+            "Import-only mode does not perform live HTTP requests. Use import-file to analyze existing tool outputs."
+        )
+        return result
+
     client = ScopeSafeHttpClient(validator, rules)
-    result = ScanResult(target=target, scope=scope_domains)
     root_url = _origin(target)
     budget_exceeded = False
 
@@ -206,6 +249,10 @@ async def _run_scan(
         try:
             response = await client.get_text(target)
             html = response.text
+            result.source_coverage["homepage"] = {
+                "fetched": True,
+                "status": response.status_code,
+            }
             parsed = urlparse(response.url)
             result.assets.append(
                 Asset(
@@ -221,12 +268,19 @@ async def _run_scan(
             _append_budget_warning(result)
             return result
         except Exception as exc:
+            result.source_coverage["homepage"] = {"fetched": False, "status": None}
             result.warnings.append(f"Target fetch failed for {target}: {exc}")
             return result
 
         try:
+            if html:
+                js_summary = extract_javascript_asset_summary(target, html, validator)
+                javascript_urls = list(js_summary.get("allowed_urls", []))
+                javascript_coverage = result.source_coverage.get("javascript", {})
+                if isinstance(javascript_coverage, dict):
+                    javascript_coverage["discovered"] = int(js_summary.get("discovered", 0) or 0)
+                    javascript_coverage["skipped_out_of_scope"] = int(js_summary.get("skipped_out_of_scope", 0) or 0)
             if html and options.download_javascript:
-                javascript_urls = extract_javascript_assets(target, html, validator)
                 for javascript_url in javascript_urls:
                     try:
                         cached = await download_javascript(
@@ -238,9 +292,11 @@ async def _run_scan(
                     except RequestBudgetExceeded:
                         raise
                     except Exception as exc:
+                        _increment_source_coverage_counter(result, "javascript", "failed")
                         result.warnings.append(f"JavaScript fetch failed for {javascript_url}: {exc}")
                         continue
                     endpoints = _endpoints_from_text(javascript_text, "javascript", javascript_url, suppression)
+                    _increment_source_coverage_counter(result, "javascript", "downloaded")
                     result.javascript_files.append(
                         JavaScriptFile(
                             url=javascript_url,
@@ -253,14 +309,20 @@ async def _run_scan(
                     result.endpoints.extend(endpoints)
 
             if options.parse_robots:
+                _set_source_coverage_checked(result, "robots")
                 await _collect_robots(client, root_url, result, validator, suppression)
             if options.parse_sitemap:
+                _set_source_coverage_checked(result, "sitemap")
                 await _collect_sitemap(client, root_url, result, validator, suppression)
             if options.parse_openapi:
+                _set_source_coverage_checked(result, "openapi")
                 await _collect_openapi(client, root_url, result)
             if options.check_common_metadata:
+                _set_source_coverage_checked(result, "security_txt")
                 await _collect_security_txt(client, root_url, result)
-                await _collect_graphql(client, root_url, result, suppression)
+                if mode_flags.get("graphql_probe_enabled", True):
+                    _set_source_coverage_checked(result, "graphql")
+                    await _collect_graphql(client, root_url, result, suppression)
         except RequestBudgetExceeded:
             budget_exceeded = True
 
@@ -288,9 +350,11 @@ async def _collect_robots(
     robots_url = urljoin(root_url, "/robots.txt")
     try:
         response = await client.get_text(robots_url)
+        _set_source_coverage_status(result, "robots", response.status_code)
     except RequestBudgetExceeded:
         raise
     except Exception as exc:
+        _set_source_coverage_status(result, "robots", None)
         result.warnings.append(f"robots.txt fetch failed for {robots_url}: {exc}")
         return
     if response.status_code >= 400:
@@ -320,9 +384,11 @@ async def _collect_sitemap(
     sitemap_url = urljoin(root_url, "/sitemap.xml")
     try:
         response = await client.get_text(sitemap_url)
+        _set_source_coverage_status(result, "sitemap", response.status_code)
     except RequestBudgetExceeded:
         raise
     except Exception as exc:
+        _set_source_coverage_status(result, "sitemap", None)
         result.warnings.append(f"sitemap.xml fetch failed for {sitemap_url}: {exc}")
         return
     if response.status_code >= 400:
@@ -350,6 +416,11 @@ async def _collect_openapi(
     root_url: str,
     result: ScanResult,
 ) -> None:
+    coverage = _source_coverage_section(result, "openapi")
+    if coverage is not None:
+        coverage["checked"] = True
+        coverage["candidates_checked"] = len(COMMON_OPENAPI_PATHS)
+        coverage["found"] = 0
     for path in COMMON_OPENAPI_PATHS:
         spec_url = urljoin(root_url, path)
         try:
@@ -375,6 +446,8 @@ async def _collect_openapi(
             )
         )
         result.endpoints.extend(endpoints)
+        if coverage is not None:
+            coverage["found"] = int(coverage.get("found", 0)) + 1
 
 
 async def _collect_security_txt(
@@ -385,9 +458,11 @@ async def _collect_security_txt(
     security_url = urljoin(root_url, "/.well-known/security.txt")
     try:
         response = await client.get_text(security_url)
+        _set_source_coverage_status(result, "security_txt", response.status_code)
     except RequestBudgetExceeded:
         raise
     except Exception as exc:
+        _set_source_coverage_status(result, "security_txt", None)
         result.warnings.append(f"security.txt fetch failed for {security_url}: {exc}")
         return
     if response.status_code >= 400:
@@ -412,6 +487,11 @@ async def _collect_graphql(
     result: ScanResult,
     suppression: SuppressionConfig,
 ) -> None:
+    coverage = _source_coverage_section(result, "graphql")
+    if coverage is not None:
+        coverage["checked"] = True
+        coverage["candidates_checked"] = len(GRAPHQL_CANDIDATE_PATHS)
+        coverage["found"] = 0
     for path in GRAPHQL_CANDIDATE_PATHS:
         url = urljoin(root_url, path)
         get_status = None
@@ -450,6 +530,8 @@ async def _collect_graphql(
                 )
             )
             result.endpoints.extend(_endpoints_from_text(path, "graphql", url, suppression))
+            if coverage is not None:
+                coverage["found"] = int(coverage.get("found", 0)) + 1
 
 
 def _looks_like_existing_graphql(get_status, post_status, response_hint: bool) -> bool:
@@ -481,6 +563,10 @@ async def _collect_auth_behavior(
     result: ScanResult,
     limit: int,
 ) -> None:
+    coverage = _source_coverage_section(result, "auth_behavior")
+    if coverage is not None:
+        coverage["enabled"] = True
+        coverage["probe_limit"] = max(0, int(limit or 0))
     for endpoint in result.endpoints[: max(0, limit)]:
         raw_path = (endpoint.raw_paths or [endpoint.raw_path])[0]
         url = urljoin(root_url, raw_path)
@@ -790,6 +876,15 @@ def _report(args: argparse.Namespace) -> int:
     result = ScanResult(
         target=data.get("target", "unknown"),
         scope=data.get("scope", []),
+        scan_mode=str(data.get("scan_mode", "default")),
+        target_fingerprint=str(data.get("target_fingerprint", "")),
+        scope_fingerprint=str(data.get("scope_fingerprint", "")),
+        scope_normalization_notes=[str(item) for item in data.get("scope_normalization_notes", []) if item is not None]
+        if isinstance(data.get("scope_normalization_notes"), list)
+        else [],
+        source_coverage=data.get("source_coverage", {})
+        if isinstance(data.get("source_coverage"), dict)
+        else {},
         assets=assets,
         endpoints=endpoints,
         findings=findings,
@@ -875,7 +970,9 @@ def _history_records(workspace: Path, limit: int) -> list:
                 "run_id": item.run_id,
                 "generated_at": item.generated_at,
                 "target": item.target,
+                "target_fingerprint": item.target_fingerprint,
                 "scope": item.scope,
+                "scope_fingerprint": item.scope_fingerprint,
                 "endpoints": item.endpoint_count,
                 "findings": item.finding_count,
                 "high_risk": item.high_risk_count,
@@ -907,7 +1004,11 @@ def _history_records(workspace: Path, limit: int) -> list:
                 "run_id": str(summary.get("run_id", run_dir.name)),
                 "generated_at": str(summary.get("generated_at", "")),
                 "target": str(summary.get("target", "")),
+                "target_fingerprint": str(summary.get("target_fingerprint", ""))
+                or target_fingerprint(str(summary.get("target", ""))),
                 "scope": summary.get("scope", []) if isinstance(summary.get("scope"), list) else [],
+                "scope_fingerprint": str(summary.get("scope_fingerprint", ""))
+                or scope_fingerprint(summary.get("scope", []) if isinstance(summary.get("scope"), list) else []),
                 "endpoints": _safe_int(summary.get("endpoints")),
                 "findings": _safe_int(summary.get("findings")),
                 "high_risk": _safe_int(summary.get("high_risk")),
@@ -1038,6 +1139,11 @@ def _result_to_json(result: ScanResult) -> dict:
     return {
         "target": result.target,
         "scope": result.scope,
+        "scan_mode": result.scan_mode,
+        "target_fingerprint": result.target_fingerprint,
+        "scope_fingerprint": result.scope_fingerprint,
+        "scope_normalization_notes": result.scope_normalization_notes,
+        "source_coverage": result.source_coverage,
         "assets": [asset.to_dict() for asset in result.assets],
         "javascript_files": [item.to_dict() for item in result.javascript_files],
         "metadata": [item.to_dict() for item in result.metadata],
@@ -1052,6 +1158,60 @@ def _safe_int(value: object) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _initial_source_coverage(options: ScanOptions, rules: RulesConfig, scan_mode: str) -> dict:
+    return {
+        "runtime": {
+            "scan_mode": scan_mode,
+            "request_budget_per_scan": int(rules.request_budget_per_scan),
+            "max_rps_per_host": int(rules.max_rps_per_host),
+            "max_concurrency": int(rules.max_concurrency),
+        },
+        "homepage": {"fetched": False, "status": None},
+        "javascript": {
+            "discovered": 0,
+            "downloaded": 0,
+            "skipped_out_of_scope": 0,
+            "failed": 0,
+        },
+        "robots": {"checked": False, "status": None},
+        "sitemap": {"checked": False, "status": None},
+        "security_txt": {"checked": False, "status": None},
+        "openapi": {"checked": False, "candidates_checked": 0, "found": 0},
+        "graphql": {"checked": False, "candidates_checked": 0, "found": 0},
+        "auth_behavior": {
+            "enabled": bool(options.check_auth_behavior),
+            "probe_limit": int(options.auth_probe_limit or 0),
+        },
+    }
+
+
+def _source_coverage_section(result: ScanResult, key: str) -> Optional[dict]:
+    if not isinstance(result.source_coverage, dict):
+        return None
+    value = result.source_coverage.get(key)
+    return value if isinstance(value, dict) else None
+
+
+def _set_source_coverage_checked(result: ScanResult, key: str) -> None:
+    section = _source_coverage_section(result, key)
+    if section is not None:
+        section["checked"] = True
+
+
+def _set_source_coverage_status(result: ScanResult, key: str, status: Optional[int]) -> None:
+    section = _source_coverage_section(result, key)
+    if section is not None:
+        section["checked"] = True
+        section["status"] = status
+
+
+def _increment_source_coverage_counter(result: ScanResult, key: str, counter: str) -> None:
+    section = _source_coverage_section(result, key)
+    if section is None:
+        return
+    section[counter] = int(section.get(counter, 0) or 0) + 1
 
 
 def _normalize_extraction_confidence(value: str) -> str:
@@ -1081,22 +1241,154 @@ def _apply_safe_profile(
 ) -> tuple[RulesConfig, ScanOptions]:
     if safe_profile != "bug-bounty":
         return rules, options
-    return (
-        replace(
-            rules,
-            max_rps_per_host=1,
-            max_concurrency=2,
-            max_retries=1,
-            retry_backoff_seconds=1.0,
-            respect_retry_after=True,
-            request_budget_per_scan=500,
-        ),
-        replace(
-            options,
-            check_auth_behavior=False,
-            auth_probe_limit=0,
-        ),
-    )
+    updated_rules, updated_options, _ = _apply_scan_mode(rules, options, "bug-bounty-safe")
+    return updated_rules, updated_options
+
+
+def _resolve_scan_mode(
+    safe_profile: Optional[str],
+    scan_mode: Optional[str],
+    config_scan_mode: Optional[str] = None,
+) -> str:
+    candidate = (scan_mode or "").strip().lower()
+    config_mode = (config_scan_mode or "default").strip().lower()
+    if safe_profile == "bug-bounty":
+        if candidate and candidate != "bug-bounty-safe":
+            raise SystemExit(
+                f"--safe-profile bug-bounty cannot be combined with scan mode {candidate}"
+            )
+        return "bug-bounty-safe"
+    if candidate in SCAN_MODE_CHOICES:
+        return candidate
+    if config_mode in SCAN_MODE_CHOICES:
+        return config_mode
+    return "default"
+
+
+def _apply_scan_mode(
+    rules: RulesConfig,
+    options: ScanOptions,
+    scan_mode: str,
+) -> tuple[RulesConfig, ScanOptions, dict]:
+    mode = (scan_mode or "default").strip().lower()
+    flags = {"graphql_probe_enabled": True}
+    if mode == "passive":
+        flags["graphql_probe_enabled"] = False
+        return (
+            replace(
+                rules,
+                max_rps_per_host=1,
+                max_concurrency=1,
+                max_retries=1,
+                retry_backoff_seconds=1.0,
+                respect_retry_after=True,
+                request_budget_per_scan=100,
+            ),
+            replace(
+                options,
+                scan_mode=mode,
+                download_javascript=False,
+                parse_openapi=False,
+                parse_robots=True,
+                parse_sitemap=True,
+                check_common_metadata=True,
+                check_auth_behavior=False,
+                auth_probe_limit=0,
+            ),
+            flags,
+        )
+    if mode == "bug-bounty-safe":
+        return (
+            replace(
+                rules,
+                max_rps_per_host=1,
+                max_concurrency=2,
+                max_retries=1,
+                retry_backoff_seconds=1.0,
+                respect_retry_after=True,
+                request_budget_per_scan=500,
+            ),
+            replace(
+                options,
+                scan_mode=mode,
+                download_javascript=True,
+                parse_openapi=True,
+                parse_robots=True,
+                parse_sitemap=True,
+                check_common_metadata=True,
+                check_auth_behavior=False,
+                auth_probe_limit=0,
+            ),
+            flags,
+        )
+    if mode == "local-lab":
+        return (
+            replace(
+                rules,
+                max_rps_per_host=5,
+                max_concurrency=5,
+                request_budget_per_scan=1000,
+            ),
+            replace(
+                options,
+                scan_mode=mode,
+                download_javascript=True,
+                parse_openapi=True,
+                parse_robots=True,
+                parse_sitemap=True,
+                check_common_metadata=True,
+                check_auth_behavior=False,
+                auth_probe_limit=0,
+            ),
+            flags,
+        )
+    if mode == "import-only":
+        flags["graphql_probe_enabled"] = False
+        return (
+            replace(
+                rules,
+                max_rps_per_host=1,
+                max_concurrency=1,
+                max_retries=1,
+                retry_backoff_seconds=1.0,
+                respect_retry_after=True,
+                request_budget_per_scan=100,
+            ),
+            replace(
+                options,
+                scan_mode=mode,
+                download_javascript=False,
+                parse_openapi=False,
+                parse_robots=False,
+                parse_sitemap=False,
+                check_common_metadata=False,
+                check_auth_behavior=False,
+                auth_probe_limit=0,
+            ),
+            flags,
+        )
+    if mode == "own-app-deep":
+        return (
+            replace(
+                rules,
+                max_rps_per_host=5,
+                max_concurrency=5,
+                request_budget_per_scan=2000,
+            ),
+            replace(
+                options,
+                scan_mode=mode,
+                download_javascript=True,
+                parse_openapi=True,
+                parse_robots=True,
+                parse_sitemap=True,
+                check_common_metadata=True,
+                check_auth_behavior=False,
+                auth_probe_limit=0,
+            ),
+            flags,
+        )
+    return replace(rules), replace(options, scan_mode="default"), flags
 
 
 if __name__ == "__main__":

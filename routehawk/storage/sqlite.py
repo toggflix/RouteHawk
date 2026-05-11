@@ -6,13 +6,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from routehawk.core.diff import scope_fingerprint, target_fingerprint
+
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS scans (
     run_id TEXT PRIMARY KEY,
     generated_at TEXT NOT NULL,
     target TEXT NOT NULL,
+    target_fingerprint TEXT NOT NULL DEFAULT '',
     scope_json TEXT NOT NULL,
+    scope_fingerprint TEXT NOT NULL DEFAULT '',
     asset_count INTEGER NOT NULL,
     javascript_file_count INTEGER NOT NULL,
     metadata_count INTEGER NOT NULL,
@@ -28,6 +32,7 @@ CREATE TABLE IF NOT EXISTS scans (
 );
 
 CREATE INDEX IF NOT EXISTS idx_scans_generated_at ON scans(generated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_scans_target_scope_fp ON scans(target_fingerprint, scope_fingerprint, generated_at DESC);
 """
 
 
@@ -36,7 +41,9 @@ class ScanRecord:
     run_id: str
     generated_at: str
     target: str
+    target_fingerprint: str
     scope: List[str]
+    scope_fingerprint: str
     endpoint_count: int
     finding_count: int
     high_risk_count: int
@@ -49,6 +56,7 @@ def initialize_database(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as connection:
         connection.executescript(SCHEMA)
+        _ensure_scan_columns(connection)
 
 
 def record_scan(
@@ -65,7 +73,9 @@ def record_scan(
                 run_id,
                 generated_at,
                 target,
+                target_fingerprint,
                 scope_json,
+                scope_fingerprint,
                 asset_count,
                 javascript_file_count,
                 metadata_count,
@@ -79,13 +89,15 @@ def record_scan(
                 result_json,
                 diff_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 str(metadata.get("run_id", "")),
                 str(metadata.get("generated_at", "")),
                 str(metadata.get("target", "")),
+                str(metadata.get("target_fingerprint", "")),
                 json.dumps(metadata.get("scope", [])),
+                str(metadata.get("scope_fingerprint", "")),
                 _int(metadata.get("assets")),
                 _int(metadata.get("javascript_files")),
                 _int(metadata.get("metadata")),
@@ -113,7 +125,9 @@ def list_scan_records(path: Path, limit: int = 20) -> List[ScanRecord]:
                 run_id,
                 generated_at,
                 target,
+                target_fingerprint,
                 scope_json,
+                scope_fingerprint,
                 endpoint_count,
                 finding_count,
                 high_risk_count,
@@ -151,22 +165,28 @@ def fetch_scan_payload(path: Path, run_id: str, column: str) -> Optional[Dict[st
 
 def _record_from_row(row: tuple) -> ScanRecord:
     try:
-        scope = json.loads(row[3])
+        scope = json.loads(row[4])
     except json.JSONDecodeError:
         scope = []
     if not isinstance(scope, list):
         scope = []
+    target = str(row[2])
+    target_fp = str(row[3] or "")
+    scope_fp = str(row[5] or "")
+    normalized_scope = [str(item) for item in scope]
     return ScanRecord(
         run_id=str(row[0]),
         generated_at=str(row[1]),
-        target=str(row[2]),
-        scope=[str(item) for item in scope],
-        endpoint_count=int(row[4]),
-        finding_count=int(row[5]),
-        high_risk_count=int(row[6]),
-        new_endpoint_count=int(row[7]),
-        removed_endpoint_count=int(row[8]),
-        changed_endpoint_count=int(row[9]),
+        target=target,
+        target_fingerprint=target_fp or target_fingerprint(target),
+        scope=normalized_scope,
+        scope_fingerprint=scope_fp or scope_fingerprint(normalized_scope),
+        endpoint_count=int(row[6]),
+        finding_count=int(row[7]),
+        high_risk_count=int(row[8]),
+        new_endpoint_count=int(row[9]),
+        removed_endpoint_count=int(row[10]),
+        changed_endpoint_count=int(row[11]),
     )
 
 
@@ -175,3 +195,19 @@ def _int(value: object) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _ensure_scan_columns(connection: sqlite3.Connection) -> None:
+    columns = {
+        str(row[1]).lower()
+        for row in connection.execute("PRAGMA table_info(scans)").fetchall()
+        if len(row) >= 2
+    }
+    if "target_fingerprint" not in columns:
+        connection.execute(
+            "ALTER TABLE scans ADD COLUMN target_fingerprint TEXT NOT NULL DEFAULT ''"
+        )
+    if "scope_fingerprint" not in columns:
+        connection.execute(
+            "ALTER TABLE scans ADD COLUMN scope_fingerprint TEXT NOT NULL DEFAULT ''"
+        )

@@ -1,9 +1,11 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import routehawk.cli as cli_module
-from routehawk.cli import _apply_safe_profile, _run_scan, build_parser
+from routehawk.cli import _apply_safe_profile, _apply_scan_mode, _resolve_scan_mode, _run_scan, build_parser
 from routehawk.core.http_client import RequestBudgetExceeded
-from routehawk.core.models import RulesConfig, ScanOptions
+from routehawk.core.models import RouteHawkConfig, RulesConfig, ScanOptions, ScopeConfig
 from routehawk.core.scope import ScopeValidator
 
 
@@ -56,6 +58,38 @@ class CliTests(unittest.TestCase):
         self.assertIn("authorized, low-impact reconnaissance", text)
         self.assertIn("scan", text)
 
+    def test_parser_accepts_scan_mode(self):
+        parser = build_parser()
+        args = parser.parse_args(
+            [
+                "scan",
+                "--target",
+                "https://app.example.com",
+                "--scope",
+                "example.com",
+                "--scan-mode",
+                "bug-bounty-safe",
+            ]
+        )
+        self.assertEqual(args.scan_mode, "bug-bounty-safe")
+
+    def test_safe_profile_and_matching_scan_mode_is_allowed(self):
+        mode = _resolve_scan_mode("bug-bounty", "bug-bounty-safe", "default")
+        self.assertEqual(mode, "bug-bounty-safe")
+
+    def test_safe_profile_and_conflicting_scan_mode_fails(self):
+        with self.assertRaises(SystemExit):
+            _resolve_scan_mode("bug-bounty", "passive", "default")
+
+    def test_apply_scan_mode_passive(self):
+        rules, options, flags = _apply_scan_mode(RulesConfig(), ScanOptions(), "passive")
+        self.assertEqual(rules.request_budget_per_scan, 100)
+        self.assertEqual(rules.max_concurrency, 1)
+        self.assertFalse(options.download_javascript)
+        self.assertFalse(options.check_auth_behavior)
+        self.assertEqual(options.scan_mode, "passive")
+        self.assertFalse(flags["graphql_probe_enabled"])
+
 
 class _BudgetStopClient:
     def __init__(self, scope, rules):
@@ -67,6 +101,46 @@ class _BudgetStopClient:
 
     async def aclose(self):
         return None
+
+
+class _FakeResponse:
+    def __init__(self, url: str, text: str, status_code: int = 200, headers=None):
+        self.url = url
+        self.text = text
+        self.status_code = status_code
+        self.headers = headers or {}
+
+
+class _CoverageClient:
+    def __init__(self, scope, rules):
+        self.scope = scope
+        self.rules = rules
+
+    async def get_text(self, url):
+        if str(url).rstrip("/") == "https://app.example.com":
+            html = """
+            <html><head>
+            <script src="/static/app.js"></script>
+            <script src="https://cdn.other.com/lib.js"></script>
+            </head></html>
+            """
+            return _FakeResponse("https://app.example.com", html, 200, {"server": "demo"})
+        if str(url).endswith("/static/app.js"):
+            return _FakeResponse("https://app.example.com/static/app.js", 'const route="/api/users/1/billing";', 200)
+        raise RuntimeError(f"Unexpected URL: {url}")
+
+    async def post_text(self, url, data):
+        raise RuntimeError(f"Unexpected POST URL: {url}")
+
+    async def aclose(self):
+        return None
+
+
+class _CachedJS:
+    def __init__(self, path: Path):
+        self.path = path
+        self.sha256 = "a" * 64
+        self.size = len(path.read_text(encoding="utf-8"))
 
 
 class CliBudgetTests(unittest.IsolatedAsyncioTestCase):
@@ -88,6 +162,180 @@ class CliBudgetTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result.target, "https://example.com")
         self.assertIn("Request budget exceeded; scan stopped early.", result.warnings)
         self.assertEqual(len([w for w in result.warnings if "Request budget exceeded" in w]), 1)
+
+    async def test_run_scan_carries_scope_normalization_and_fingerprints(self):
+        original_client = cli_module.ScopeSafeHttpClient
+        cli_module.ScopeSafeHttpClient = _BudgetStopClient
+        try:
+            validator = ScopeValidator(["www.whatnot.com"])
+            result = await _run_scan(
+                "https://www.whatnot.com/path?x=1",
+                ["www.whatnot.com"],
+                validator,
+                config=None,
+                safe_profile="bug-bounty",
+                scope_normalization_notes=[
+                    "Normalized scope entry: https://www.whatnot.com -> www.whatnot.com"
+                ],
+            )
+        finally:
+            cli_module.ScopeSafeHttpClient = original_client
+
+        self.assertEqual(result.target_fingerprint, "https://www.whatnot.com")
+        self.assertEqual(result.scope_fingerprint, "www.whatnot.com")
+        self.assertIn(
+            "Normalized scope entry: https://www.whatnot.com -> www.whatnot.com",
+            result.warnings,
+        )
+
+    async def test_source_coverage_tracks_javascript_discovery_download_and_scope_skips(self):
+        original_client = cli_module.ScopeSafeHttpClient
+        original_download = cli_module.download_javascript
+        with TemporaryDirectory() as temporary:
+            js_path = Path(temporary) / "app.js"
+            js_path.write_text('const route="/api/users/1/billing";', encoding="utf-8")
+
+            async def _fake_download(client, url, cache_root):
+                return _CachedJS(js_path)
+
+            cli_module.ScopeSafeHttpClient = _CoverageClient
+            cli_module.download_javascript = _fake_download
+            try:
+                config = RouteHawkConfig(
+                    program="test",
+                    scope=ScopeConfig(domains=["app.example.com"]),
+                    rules=RulesConfig(),
+                    scan=ScanOptions(
+                        parse_robots=False,
+                        parse_sitemap=False,
+                        parse_openapi=False,
+                        check_common_metadata=False,
+                    ),
+                    targets=["https://app.example.com"],
+                )
+                validator = ScopeValidator(["app.example.com"])
+                result = await _run_scan(
+                    "https://app.example.com",
+                    ["app.example.com"],
+                    validator,
+                    config=config,
+                )
+            finally:
+                cli_module.ScopeSafeHttpClient = original_client
+                cli_module.download_javascript = original_download
+
+        coverage = result.source_coverage.get("javascript", {})
+        self.assertEqual(coverage.get("discovered"), 2)
+        self.assertEqual(coverage.get("downloaded"), 1)
+        self.assertEqual(coverage.get("skipped_out_of_scope"), 1)
+        self.assertEqual(coverage.get("failed"), 0)
+        payload = cli_module._result_to_json(result)
+        self.assertIn("source_coverage", payload)
+        self.assertEqual(payload["source_coverage"]["javascript"]["downloaded"], 1)
+
+    async def test_import_only_mode_skips_live_http_requests(self):
+        original_client = cli_module.ScopeSafeHttpClient
+        cli_module.ScopeSafeHttpClient = _BudgetStopClient
+        try:
+            validator = ScopeValidator(["example.com"])
+            result = await _run_scan(
+                "https://example.com",
+                ["example.com"],
+                validator,
+                config=None,
+                scan_mode="import-only",
+            )
+        finally:
+            cli_module.ScopeSafeHttpClient = original_client
+        self.assertEqual(result.scan_mode, "import-only")
+        self.assertIn(
+            "Import-only mode does not perform live HTTP requests.",
+            " ".join(result.warnings),
+        )
+        self.assertEqual(result.assets, [])
+
+    async def test_passive_mode_skips_js_download_and_graphql_probes(self):
+        original_client = cli_module.ScopeSafeHttpClient
+        original_download = cli_module.download_javascript
+        with TemporaryDirectory() as temporary:
+            js_path = Path(temporary) / "app.js"
+            js_path.write_text('const route="/api/users/1/billing";', encoding="utf-8")
+
+            async def _fake_download(client, url, cache_root):
+                return _CachedJS(js_path)
+
+            cli_module.ScopeSafeHttpClient = _CoverageClient
+            cli_module.download_javascript = _fake_download
+            try:
+                config = RouteHawkConfig(
+                    program="test",
+                    scope=ScopeConfig(domains=["app.example.com"]),
+                    rules=RulesConfig(),
+                    scan=ScanOptions(
+                        parse_robots=False,
+                        parse_sitemap=False,
+                        parse_openapi=False,
+                        check_common_metadata=True,
+                    ),
+                    targets=["https://app.example.com"],
+                )
+                validator = ScopeValidator(["app.example.com"])
+                result = await _run_scan(
+                    "https://app.example.com",
+                    ["app.example.com"],
+                    validator,
+                    config=config,
+                    scan_mode="passive",
+                )
+            finally:
+                cli_module.ScopeSafeHttpClient = original_client
+                cli_module.download_javascript = original_download
+        self.assertEqual(result.scan_mode, "passive")
+        self.assertEqual(result.source_coverage["javascript"]["downloaded"], 0)
+        self.assertFalse(result.source_coverage["graphql"]["checked"])
+        self.assertEqual(result.source_coverage["runtime"]["request_budget_per_scan"], 100)
+
+    async def test_scan_modes_local_lab_and_own_app_deep_are_visible(self):
+        original_client = cli_module.ScopeSafeHttpClient
+        cli_module.ScopeSafeHttpClient = _BudgetStopClient
+        try:
+            validator = ScopeValidator(["example.com"])
+            local = await _run_scan(
+                "https://example.com",
+                ["example.com"],
+                validator,
+                config=None,
+                scan_mode="local-lab",
+            )
+            own = await _run_scan(
+                "https://example.com",
+                ["example.com"],
+                validator,
+                config=None,
+                scan_mode="own-app-deep",
+            )
+        finally:
+            cli_module.ScopeSafeHttpClient = original_client
+        self.assertEqual(local.scan_mode, "local-lab")
+        self.assertEqual(own.scan_mode, "own-app-deep")
+        self.assertEqual(local.source_coverage["runtime"]["request_budget_per_scan"], 1000)
+        self.assertEqual(own.source_coverage["runtime"]["request_budget_per_scan"], 2000)
+
+    def test_report_load_is_backward_compatible_without_source_coverage(self):
+        result = cli_module.ScanResult(
+            target="https://example.com",
+            scope=["example.com"],
+        )
+        payload = cli_module._result_to_json(result)
+        payload.pop("source_coverage", None)
+        rebuilt = cli_module.ScanResult(
+            target=payload.get("target", ""),
+            scope=payload.get("scope", []),
+            source_coverage=payload.get("source_coverage", {})
+            if isinstance(payload.get("source_coverage"), dict)
+            else {},
+        )
+        self.assertEqual(rebuilt.source_coverage, {})
 
 
 if __name__ == "__main__":

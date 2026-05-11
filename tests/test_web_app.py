@@ -9,6 +9,7 @@ from routehawk.web_app import _compare_panel
 from routehawk.web_app import _diff_panel
 from routehawk.web_app import _history_panel
 from routehawk.web_app import _scan_result_from_payload
+from routehawk.web_app import _split_scope
 from routehawk.web_app import _status_banner
 from routehawk.web_app import RouteHawkWebApp
 
@@ -81,9 +82,10 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("/api/admin/export", html)
         self.assertIn("/debug/config", html)
         self.assertIn("risk 55 -> 80", html)
-        self.assertIn("confidence: medium -> high", html)
-        self.assertIn("app relevance: medium -> high", html)
-        self.assertIn("app relevance high", html)
+        self.assertIn("Extraction confidence: medium -> high", html)
+        self.assertIn("App relevance: medium -> high", html)
+        self.assertIn("App relevance: high", html)
+        self.assertNotIn("relevance app relevance", html)
         self.assertIn("relevance-low", html)
         self.assertIn('data-dashboard-endpoint="true"', html)
         self.assertIn('data-relevance="high"', html)
@@ -179,6 +181,12 @@ class WebAppTests(unittest.TestCase):
 
             self.assertIn('id="scan-form"', html)
             self.assertIn('id="scan-submit"', html)
+            self.assertIn('id="scan_mode"', html)
+            self.assertIn('value="bug-bounty-safe" selected', html)
+            self.assertIn("Bug bounty safe", html)
+            self.assertIn("Passive", html)
+            self.assertIn("Import only", html)
+            self.assertIn("scan-mode-description", html)
             self.assertIn('button.disabled = true', html)
             self.assertIn('button.textContent = "Scanning..."', html)
 
@@ -320,10 +328,11 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("/api/billing/{id}", html)
         self.assertIn("Changed endpoints", html)
         self.assertIn("risk score: 55 -> 80", html)
-        self.assertIn("confidence: medium -> high", html)
-        self.assertIn("app relevance: medium -> high", html)
+        self.assertIn("Extraction confidence: medium -> high", html)
+        self.assertIn("App relevance: medium -> high", html)
         self.assertIn("App Relevance", html)
-        self.assertIn("app relevance high", html)
+        self.assertIn("App relevance: high", html)
+        self.assertNotIn("relevance app relevance", html)
         self.assertIn('data-dashboard-endpoint="true"', html)
         self.assertIn('data-relevance="high"', html)
         self.assertIn('data-confidence="high"', html)
@@ -355,6 +364,65 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("No new endpoints", html)
         self.assertIn("No removed endpoints", html)
         self.assertIn("No changed endpoints", html)
+
+    def test_compare_panel_shows_warning_for_different_target_scope(self):
+        runs = [
+            {"run_id": "20260507-120002", "target": "https://api.example.com", "generated_at": "t2"},
+            {"run_id": "20260507-120001", "target": "https://app.example.com", "generated_at": "t1"},
+        ]
+        compare = {
+            "base": "20260507-120001",
+            "head": "20260507-120002",
+            "diff": {
+                "new_count": 0,
+                "removed_count": 0,
+                "changed_count": 0,
+                "unchanged_count": 0,
+                "new": [],
+                "removed": [],
+                "changed": [],
+                "previous_target": "https://app.example.com",
+                "current_target": "https://api.example.com",
+                "previous_scope": ["example.com"],
+                "current_scope": ["api.example.com"],
+                "target_changed": True,
+                "scope_changed": True,
+                "warning": "Warning: these scans have different target or scope fingerprints. Diff may be misleading.",
+            },
+            "error": "",
+        }
+
+        html = _compare_panel(runs, compare)
+
+        self.assertIn("Compare warning", html)
+        self.assertIn("Base target:", html)
+        self.assertIn("Head target:", html)
+
+    def test_diff_panel_shows_baseline_message(self):
+        html = _diff_panel(
+            {
+                "new_count": 3,
+                "removed_count": 0,
+                "changed_count": 0,
+                "unchanged_count": 0,
+                "new": [],
+                "removed": [],
+                "changed": [],
+                "baseline_message": "No previous scan found for this target/scope. This run is now the baseline.",
+                "warning": "",
+            }
+        )
+
+        self.assertIn("No previous scan found for this target/scope", html)
+
+    def test_split_scope_normalizes_urls(self):
+        values, notes = _split_scope("https://www.whatnot.com,\nhttp://localhost:8088/path\n*.example.com")
+
+        self.assertEqual(values, ["www.whatnot.com", "localhost:8088", "*.example.com"])
+        self.assertIn(
+            "Normalized scope entry: https://www.whatnot.com -> www.whatnot.com",
+            notes,
+        )
 
     def test_compare_context_builds_diff_for_known_runs(self):
         with TemporaryDirectory() as temporary:
@@ -407,6 +475,146 @@ class WebAppTests(unittest.TestCase):
 
             self.assertEqual(context["error"], "")
             self.assertEqual(context["diff"]["new_count"], 1)
+            self.assertFalse(context["diff"]["target_changed"])
+            self.assertFalse(context["diff"]["scope_changed"])
+
+    def test_latest_diff_uses_same_target_scope_baseline_grouping(self):
+        with TemporaryDirectory() as temporary:
+            app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
+            first = ScanResult(
+                target="https://app.example.com",
+                scope=["example.com"],
+                endpoints=[
+                    Endpoint(
+                        source="javascript",
+                        source_url="https://app.example.com/main.js",
+                        method="GET",
+                        raw_path="/api/users/1",
+                        normalized_path="/api/users/{id}",
+                        risk_score=10,
+                    )
+                ],
+            )
+            app._write_outputs(first)
+            first_diff = app._read_latest_diff()
+            self.assertTrue(first_diff.get("baseline"))
+
+            second = ScanResult(
+                target="https://app.example.com",
+                scope=["example.com"],
+                endpoints=[
+                    Endpoint(
+                        source="javascript",
+                        source_url="https://app.example.com/main.js",
+                        method="GET",
+                        raw_path="/api/users/1",
+                        normalized_path="/api/users/{id}",
+                        risk_score=10,
+                    ),
+                    Endpoint(
+                        source="javascript",
+                        source_url="https://app.example.com/main.js",
+                        method="GET",
+                        raw_path="/api/admin",
+                        normalized_path="/api/admin",
+                        risk_score=50,
+                    ),
+                ],
+            )
+            app._write_outputs(second)
+            second_diff = app._read_latest_diff()
+            self.assertFalse(second_diff.get("baseline"))
+            self.assertEqual(second_diff.get("new_count"), 1)
+
+    def test_latest_diff_does_not_mix_different_targets(self):
+        with TemporaryDirectory() as temporary:
+            app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
+            first = ScanResult(
+                target="https://local.demo",
+                scope=["local.demo"],
+                endpoints=[
+                    Endpoint(
+                        source="javascript",
+                        source_url="https://local.demo/main.js",
+                        method="GET",
+                        raw_path="/api/a",
+                        normalized_path="/api/a",
+                        risk_score=10,
+                    )
+                ],
+            )
+            app._write_outputs(first)
+
+            second = ScanResult(
+                target="https://www.whatnot.com",
+                scope=["www.whatnot.com"],
+                endpoints=[],
+            )
+            app._write_outputs(second)
+            diff = app._read_latest_diff()
+
+            self.assertTrue(diff.get("baseline"))
+            self.assertEqual(diff.get("removed_count"), 0)
+            self.assertEqual(diff.get("new_count"), 0)
+
+    def test_dashboard_renders_source_coverage_and_scan_explanation_panels(self):
+        with TemporaryDirectory() as temporary:
+            app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
+            result = ScanResult(
+                target="https://example.com",
+                scope=["example.com"],
+                scan_mode="bug-bounty-safe",
+                source_coverage={
+                    "runtime": {
+                        "scan_mode": "bug-bounty-safe",
+                        "request_budget_per_scan": 500,
+                        "max_rps_per_host": 1,
+                        "max_concurrency": 2,
+                    },
+                    "homepage": {"fetched": True, "status": 200},
+                    "javascript": {"discovered": 2, "downloaded": 0, "skipped_out_of_scope": 2, "failed": 0},
+                    "robots": {"checked": True, "status": 200},
+                    "sitemap": {"checked": True, "status": 200},
+                    "security_txt": {"checked": True, "status": 404},
+                    "openapi": {"checked": True, "candidates_checked": 6, "found": 0},
+                    "graphql": {"checked": True, "candidates_checked": 3, "found": 0},
+                    "auth_behavior": {"enabled": False, "probe_limit": 0},
+                },
+            )
+            app._write_outputs(result)
+            html = app._dashboard({"scan": ["complete"]})
+
+            self.assertIn("Source Coverage", html)
+            self.assertIn("Scan Explanation", html)
+            self.assertIn("Mode used", html)
+            self.assertIn("bug-bounty-safe", html)
+            self.assertIn("JavaScript assets were discovered, but none were downloaded.", html)
+            self.assertIn("Skipped 2 JavaScript assets because they were outside configured scope.", html)
+            self.assertIn("Auth behavior checks were disabled.", html)
+
+    def test_dashboard_scan_explanation_includes_baseline_message(self):
+        with TemporaryDirectory() as temporary:
+            app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
+            result = ScanResult(
+                target="https://example.com",
+                scope=["example.com"],
+                scan_mode="passive",
+                source_coverage={
+                    "runtime": {
+                        "scan_mode": "passive",
+                        "request_budget_per_scan": 100,
+                        "max_rps_per_host": 1,
+                        "max_concurrency": 1,
+                    },
+                    "homepage": {"fetched": True, "status": 200},
+                    "javascript": {"discovered": 0, "downloaded": 0, "skipped_out_of_scope": 0, "failed": 0},
+                    "auth_behavior": {"enabled": False, "probe_limit": 0},
+                },
+            )
+            app._write_outputs(result)
+            html = app._dashboard({"scan": ["complete"]})
+            self.assertIn("No previous scan found for this target/scope. This run is now the baseline.", html)
+            self.assertIn("Passive mode skipped JavaScript downloads and GraphQL candidate probes.", html)
 
     def test_rebuilds_scan_result_from_json_payload(self):
         result = _scan_result_from_payload(

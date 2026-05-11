@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
-from typing import List
+from typing import Dict, List
 from urllib.parse import urljoin
 
 from routehawk.core.scope import ScopeValidator
@@ -30,6 +30,23 @@ class _JavaScriptAssetParser(HTMLParser):
 
 
 def extract_javascript_assets(base_url: str, html: str, scope: ScopeValidator) -> List[str]:
+    summary = extract_javascript_asset_summary(base_url, html, scope)
+    return summary["allowed_urls"]
+
+
+def extract_javascript_asset_summary(base_url: str, html: str, scope: ScopeValidator) -> Dict[str, object]:
     parser = _JavaScriptAssetParser(base_url)
     parser.feed(html)
-    return sorted(url for url in parser.urls if scope.is_url_allowed(url))
+    discovered = sorted(parser.urls)
+    allowed = []
+    skipped = 0
+    for url in discovered:
+        if scope.is_url_allowed(url):
+            allowed.append(url)
+        else:
+            skipped += 1
+    return {
+        "allowed_urls": allowed,
+        "discovered": len(discovered),
+        "skipped_out_of_scope": skipped,
+    }

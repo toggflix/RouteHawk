@@ -11,7 +11,7 @@ from typing import Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from routehawk.cli import _result_to_json, _run_scan
-from routehawk.core.diff import build_endpoint_diff
+from routehawk.core.diff import build_endpoint_diff, scope_fingerprint, target_fingerprint
 from routehawk.core.models import (
     Asset,
     Endpoint,
@@ -24,7 +24,7 @@ from routehawk.core.models import (
     ScanResult,
     ScopeConfig,
 )
-from routehawk.core.scope import ScopeValidator
+from routehawk.core.scope import ScopeValidator, normalize_scope_entries
 from routehawk.reports.html import render_html
 from routehawk.reports.markdown import render_markdown
 from routehawk.reports.summary import build_summary
@@ -107,14 +107,15 @@ class RouteHawkWebApp:
         form = parse_qs(body)
         target = _form_value(form, "target")
         scope_text = _form_value(form, "scope")
+        scan_mode = _form_value(form, "scan_mode") or "bug-bounty-safe"
 
         if not target or not scope_text:
             self._redirect(request, "/?error=missing-target-or-scope")
             return
 
-        scope_domains = _split_scope(scope_text)
+        scope_domains, scope_notes = _split_scope(scope_text)
         try:
-            result = self._scan(target, scope_domains)
+            result = self._scan(target, scope_domains, scope_notes, scan_mode)
         except Exception as exc:
             self._write_error(target, scope_domains, str(exc))
             self._redirect(request, "/?error=scan-failed")
@@ -123,7 +124,7 @@ class RouteHawkWebApp:
         self._write_outputs(result)
         self._redirect(request, "/?scan=complete")
 
-    def _scan(self, target: str, scope_domains: list):
+    def _scan(self, target: str, scope_domains: list, scope_notes: list, scan_mode: str):
         validator = ScopeValidator(scope_domains)
         decision = validator.explain_url(target)
         if not decision.allowed:
@@ -133,15 +134,35 @@ class RouteHawkWebApp:
             program="routehawk-dashboard",
             scope=ScopeConfig(domains=scope_domains),
             rules=RulesConfig(timeout_seconds=5, max_rps_per_host=5),
-            scan=ScanOptions(),
+            scan=ScanOptions(scan_mode=scan_mode),
             targets=[target],
         )
-        return asyncio.run(_run_scan(target, sorted(set(scope_domains)), validator, config))
+        return asyncio.run(
+            _run_scan(
+                target,
+                sorted(set(scope_domains)),
+                validator,
+                config,
+                scan_mode=scan_mode,
+                scope_normalization_notes=scope_notes,
+            )
+        )
 
     def _write_outputs(self, result) -> None:
         payload = _result_to_json(result)
-        previous_payload = self._read_previous_payload()
+        current_target_fingerprint = result.target_fingerprint or target_fingerprint(result.target)
+        current_scope_fingerprint = result.scope_fingerprint or scope_fingerprint(result.scope)
+        previous_payload = self._read_previous_payload_for_fingerprint(
+            current_target_fingerprint,
+            current_scope_fingerprint,
+        )
         diff = build_endpoint_diff(previous_payload, payload)
+        if previous_payload:
+            diff["baseline"] = False
+            diff["baseline_message"] = ""
+        else:
+            diff["baseline"] = True
+            diff["baseline_message"] = "No previous scan found for this target/scope. This run is now the baseline."
         run_id = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
         history_dir = self.runs_root / run_id
         history_dir.mkdir(parents=True, exist_ok=True)
@@ -160,7 +181,10 @@ class RouteHawkWebApp:
             "run_id": run_id,
             "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
             "target": result.target,
+            "scan_mode": result.scan_mode,
+            "target_fingerprint": current_target_fingerprint,
             "scope": result.scope,
+            "scope_fingerprint": current_scope_fingerprint,
             "assets": summary.asset_count,
             "javascript_files": summary.javascript_file_count,
             "metadata": summary.metadata_count,
@@ -172,20 +196,65 @@ class RouteHawkWebApp:
             "removed_endpoints": diff["removed_count"],
             "changed_endpoints": diff["changed_count"],
             "warnings": summary.warning_count,
+            "warnings_list": list(result.warnings),
+            "source_coverage": result.source_coverage if isinstance(result.source_coverage, dict) else {},
         }
         self._write_run_files(self.run_dir, results_json, report_html, report_md, diff_json, metadata)
         self._write_run_files(history_dir, results_json, report_html, report_md, diff_json, metadata)
         record_scan(self.database_path, metadata, payload, diff)
 
-    def _read_previous_payload(self) -> Dict[str, object]:
-        path = self.run_dir / "results.json"
-        if not path.exists():
+    def _read_previous_payload_for_fingerprint(
+        self,
+        current_target_fingerprint: str,
+        current_scope_fingerprint: str,
+    ) -> Dict[str, object]:
+        if not current_target_fingerprint or not current_scope_fingerprint:
             return {}
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+
+        records = list_scan_records(self.database_path, limit=50)
+        for record in records:
+            if (
+                record.target_fingerprint != current_target_fingerprint
+                or record.scope_fingerprint != current_scope_fingerprint
+            ):
+                continue
+            payload = fetch_scan_payload(self.database_path, record.run_id, "result_json")
+            if isinstance(payload, dict):
+                return payload
+
+        if not self.runs_root.exists():
             return {}
-        return data if isinstance(data, dict) else {}
+        for run_dir in sorted(self.runs_root.iterdir(), reverse=True):
+            if not run_dir.is_dir() or run_dir.name == "latest":
+                continue
+            summary_path = run_dir / "summary.json"
+            result_path = run_dir / "results.json"
+            if not summary_path.exists() or not result_path.exists():
+                continue
+            try:
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(summary, dict):
+                continue
+            run_target_fingerprint = str(summary.get("target_fingerprint") or "")
+            run_scope_fingerprint = str(summary.get("scope_fingerprint") or "")
+            if not run_target_fingerprint:
+                run_target_fingerprint = target_fingerprint(str(summary.get("target") or ""))
+            if not run_scope_fingerprint:
+                run_scope_fingerprint = scope_fingerprint(summary.get("scope") or [])
+            if (
+                run_target_fingerprint != current_target_fingerprint
+                or run_scope_fingerprint != current_scope_fingerprint
+            ):
+                continue
+            try:
+                payload = json.loads(result_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+        return {}
 
     def _write_error(self, target: str, scope_domains: list, message: str) -> None:
         error = {
@@ -203,11 +272,15 @@ class RouteHawkWebApp:
         latest_run_id = str(runs[0].get("run_id", "")) if runs else ""
         compare = self._build_compare_context(query or {}, runs)
         last_run = _last_run_panel(summary, error)
+        source_coverage_panel = _dashboard_source_coverage_panel(summary)
+        scan_explanation_panel = _dashboard_scan_explanation_panel(summary, diff)
         diff_panel = _diff_panel(diff)
         compare_panel = _compare_panel(runs, compare)
         history = _history_panel(runs, latest_run_id)
         target_value = escape(summary.get("target", "http://localhost:8088") if summary else "http://localhost:8088")
         scope_value = escape(", ".join(summary.get("scope", ["localhost"])) if summary else "localhost")
+        scan_mode_value = str(summary.get("scan_mode", "bug-bounty-safe")) if summary else "bug-bounty-safe"
+        mode_options = _scan_mode_options(scan_mode_value)
         status_banner = _status_banner(query or {}, summary, error)
 
         return f"""<!doctype html>
@@ -481,6 +554,13 @@ class RouteHawkWebApp:
             <textarea id="scope" name="scope" required>{scope_value}</textarea>
             <div class="hint">Comma or newline separated. Example: <code>example.com, *.example.com</code></div>
           </div>
+          <div class="field">
+            <label for="scan_mode">Scan mode</label>
+            <select id="scan_mode" name="scan_mode">
+              {mode_options}
+            </select>
+            <div class="hint" id="scan-mode-description"></div>
+          </div>
           <button id="scan-submit" type="submit" data-default-label="Run scope-safe scan">Run scope-safe scan</button>
         </form>
       </section>
@@ -531,6 +611,14 @@ class RouteHawkWebApp:
       <p id="dashboard-filter-empty" class="hint hidden">No endpoints match the selected filters.</p>
     </section>
     <section class="panel" style="margin-top: 18px;">
+      <h2>Source Coverage</h2>
+      {source_coverage_panel}
+    </section>
+    <section class="panel" style="margin-top: 18px;">
+      <h2>Scan Explanation</h2>
+      {scan_explanation_panel}
+    </section>
+    <section class="panel" style="margin-top: 18px;">
       <h2>Latest Diff</h2>
       {diff_panel}
     </section>
@@ -548,6 +636,23 @@ class RouteHawkWebApp:
     (function () {{
       const form = document.getElementById("scan-form");
       const button = document.getElementById("scan-submit");
+      const scanMode = document.getElementById("scan_mode");
+      const scanModeDescription = document.getElementById("scan-mode-description");
+      const modeMessages = {{
+        "passive": "Passive: minimal public recon, no JS download, no GraphQL candidate probes.",
+        "bug-bounty-safe": "Bug bounty safe: low-impact public recon, auth probes disabled, request budget enabled.",
+        "local-lab": "Local lab: relaxed settings for local demo/lab targets.",
+        "import-only": "Import only: no live HTTP requests; use import-file for existing outputs.",
+        "own-app-deep": "Own app deep: broader collection for systems you own."
+      }};
+      function updateModeDescription() {{
+        if (!scanMode || !scanModeDescription) return;
+        scanModeDescription.textContent = modeMessages[scanMode.value] || "";
+      }}
+      if (scanMode) {{
+        scanMode.addEventListener("change", updateModeDescription);
+        updateModeDescription();
+      }}
       if (!form || !button) return;
       form.addEventListener("submit", () => {{
         button.disabled = true;
@@ -687,7 +792,9 @@ class RouteHawkWebApp:
                     "run_id": record.run_id,
                     "generated_at": record.generated_at,
                     "target": record.target,
+                    "target_fingerprint": record.target_fingerprint,
                     "scope": record.scope,
+                    "scope_fingerprint": record.scope_fingerprint,
                     "endpoints": record.endpoint_count,
                     "findings": record.finding_count,
                     "high_risk": record.high_risk_count,
@@ -713,6 +820,11 @@ class RouteHawkWebApp:
                 data = json.loads(summary_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 continue
+            if not isinstance(data, dict):
+                continue
+            data.setdefault("target_fingerprint", target_fingerprint(str(data.get("target", ""))))
+            scope_values = data.get("scope", []) if isinstance(data.get("scope"), list) else []
+            data.setdefault("scope_fingerprint", scope_fingerprint(scope_values))
             runs.append(data)
             if len(runs) >= 8:
                 break
@@ -871,13 +983,13 @@ def _form_value(form: Dict[str, list], key: str) -> str:
     return values[0].strip()
 
 
-def _split_scope(value: str) -> list:
+def _split_scope(value: str) -> tuple[list, list]:
     parts = []
     for chunk in value.replace(",", "\n").splitlines():
         cleaned = chunk.strip()
         if cleaned:
             parts.append(cleaned)
-    return parts
+    return normalize_scope_entries(parts)
 
 
 def _safe_run_id(value: str) -> bool:
@@ -940,9 +1052,11 @@ def _last_run_panel(summary: Dict[str, object], error: str) -> str:
     cards = "".join(f'<div class="metric"><span>{label}</span><strong>{value}</strong></div>' for label, value in metrics)
     generated = escape(str(summary.get("generated_at", "unknown")))
     target = escape(str(summary.get("target", "unknown")))
+    scan_mode = escape(str(summary.get("scan_mode", "default")))
     return f"""
     <p class="hint">Generated at {generated}</p>
     <p>Target: <code>{target}</code></p>
+    <p>Mode used: <code>{scan_mode}</code></p>
     <div class="metrics">{cards}</div>
     <div class="actions">
       <a href="/reports/latest.html">HTML report</a>
@@ -951,6 +1065,93 @@ def _last_run_panel(summary: Dict[str, object], error: str) -> str:
       <a href="/diff/latest.json">Diff</a>
     </div>
     """
+
+
+def _dashboard_source_coverage_panel(summary: Dict[str, object]) -> str:
+    coverage = _summary_source_coverage(summary)
+    homepage = _coverage_section(coverage, "homepage")
+    javascript = _coverage_section(coverage, "javascript")
+    robots = _coverage_section(coverage, "robots")
+    sitemap = _coverage_section(coverage, "sitemap")
+    security_txt = _coverage_section(coverage, "security_txt")
+    openapi = _coverage_section(coverage, "openapi")
+    graphql = _coverage_section(coverage, "graphql")
+    auth_behavior = _coverage_section(coverage, "auth_behavior")
+    rows = [
+        ("Homepage", f"fetched {_bool_word(homepage.get('fetched'))} | status {_status_word(homepage.get('status'))}"),
+        (
+            "JavaScript",
+            "discovered "
+            f"{_safe_int(javascript.get('discovered'))} | downloaded {_safe_int(javascript.get('downloaded'))} | "
+            f"skipped out-of-scope {_safe_int(javascript.get('skipped_out_of_scope'))} | failed {_safe_int(javascript.get('failed'))}",
+        ),
+        ("robots.txt", f"checked {_bool_word(robots.get('checked'))} | status {_status_word(robots.get('status'))}"),
+        ("sitemap.xml", f"checked {_bool_word(sitemap.get('checked'))} | status {_status_word(sitemap.get('status'))}"),
+        ("security.txt", f"checked {_bool_word(security_txt.get('checked'))} | status {_status_word(security_txt.get('status'))}"),
+        (
+            "OpenAPI",
+            f"checked {_bool_word(openapi.get('checked'))} | candidates {_safe_int(openapi.get('candidates_checked'))} | found {_safe_int(openapi.get('found'))}",
+        ),
+        (
+            "GraphQL",
+            f"checked {_bool_word(graphql.get('checked'))} | candidates {_safe_int(graphql.get('candidates_checked'))} | found {_safe_int(graphql.get('found'))}",
+        ),
+        (
+            "Auth behavior",
+            f"enabled {_bool_word(auth_behavior.get('enabled'))} | probe limit {_safe_int(auth_behavior.get('probe_limit'))}",
+        ),
+    ]
+    return "<ul>" + "".join(
+        f"<li><strong>{escape(label)}:</strong> {escape(text)}</li>"
+        for label, text in rows
+    ) + "</ul>"
+
+
+def _dashboard_scan_explanation_panel(summary: Dict[str, object], diff: Dict[str, object]) -> str:
+    if not summary:
+        return '<p class="hint">No scan explanation yet. Run a scan to populate coverage and outcome notes.</p>'
+
+    coverage = _summary_source_coverage(summary)
+    homepage = _coverage_section(coverage, "homepage")
+    javascript = _coverage_section(coverage, "javascript")
+    auth_behavior = _coverage_section(coverage, "auth_behavior")
+    discovered = _safe_int(javascript.get("discovered"))
+    downloaded = _safe_int(javascript.get("downloaded"))
+    skipped = _safe_int(javascript.get("skipped_out_of_scope"))
+    lines = []
+    mode = str(summary.get("scan_mode", "default")).strip().lower()
+    lines.append(f"Scan mode: {mode}.")
+    if homepage.get("fetched"):
+        lines.append(f"Target fetched successfully (status {_status_word(homepage.get('status'))}).")
+    else:
+        lines.append("Target fetch failed or was not completed.")
+    lines.append(f"{downloaded} JavaScript files were downloaded.")
+    if discovered == 0:
+        lines.append("No JavaScript assets were discovered on the fetched page.")
+    elif downloaded == 0:
+        lines.append("JavaScript assets were discovered, but none were downloaded. They may be outside configured scope or unavailable.")
+    if skipped > 0:
+        lines.append(f"Skipped {skipped} JavaScript assets because they were outside configured scope.")
+    lines.append(f"{_safe_int(summary.get('endpoints'))} endpoint candidates were found.")
+    lines.append(f"{_safe_int(summary.get('findings'))} manual review candidates were generated.")
+    if _safe_int(summary.get("high_risk")) == 0:
+        lines.append("No high-risk candidates were found.")
+    if not auth_behavior.get("enabled"):
+        lines.append("Auth behavior checks were disabled.")
+    else:
+        lines.append(f"Auth behavior checks were enabled with probe limit {_safe_int(auth_behavior.get('probe_limit'))}.")
+    if _summary_has_budget_warning(summary):
+        lines.append("Request budget was enabled and the scan stopped early after reaching the budget.")
+    else:
+        lines.append("Request budget was enabled.")
+    if mode == "import-only":
+        lines.append("Import-only mode did not perform live HTTP requests.")
+    if mode == "passive":
+        lines.append("Passive mode skipped JavaScript downloads and GraphQL candidate probes.")
+    baseline_message = str(diff.get("baseline_message", "")).strip() if isinstance(diff, dict) else ""
+    if baseline_message:
+        lines.append(baseline_message)
+    return "<ul>" + "".join(f"<li>{escape(line)}</li>" for line in lines) + "</ul>"
 
 
 def _diff_panel(diff: Dict[str, object]) -> str:
@@ -966,12 +1167,26 @@ def _diff_panel(diff: Dict[str, object]) -> str:
     removed_count = int(diff.get("removed_count", 0) or 0)
     changed_count = int(diff.get("changed_count", 0) or 0)
     unchanged_count = int(diff.get("unchanged_count", 0) or 0)
+    warning = str(diff.get("warning", "") or "").strip()
+    baseline_message = str(diff.get("baseline_message", "") or "").strip()
+    notice = ""
+    if baseline_message:
+        notice = (
+            '<div class="notice"><strong>Baseline</strong>'
+            f"<span>{escape(baseline_message)}</span></div>"
+        )
+    elif warning:
+        notice = (
+            '<div class="notice error"><strong>Compare warning</strong>'
+            f"<span>{escape(warning)}</span></div>"
+        )
     summary = (
         f'<p class="hint">New {new_count} | removed {removed_count} | changed {changed_count} | '
         f'unchanged {unchanged_count}</p>'
     )
     return (
-        summary
+        notice
+        + summary
         + '<div class="diff-grid">'
         + _diff_column("New endpoints", diff.get("new", []), "No new endpoints.")
         + _diff_column("Removed endpoints", diff.get("removed", []), "No removed endpoints.")
@@ -1018,7 +1233,7 @@ def _diff_changed_column(items: object) -> str:
         rows.append(
             f'<div class="diff-item relevance-{escape(relevance)}" {attrs}>'
             f"<code>{endpoint}</code>"
-            f'<div class="diff-meta">risk {previous_score} -> {current_score} | confidence {escape(confidence)} | relevance {_relevance_badge(relevance)}</div>'
+            f'<div class="diff-meta">risk {previous_score} -> {current_score} | Extraction confidence: {escape(confidence)} | {_relevance_badge(relevance)}</div>'
             f'<div class="diff-meta">sources {sources} | source URLs {source_urls} | reasons {reason_count}</div>'
             f'<div class="diff-meta">reason preview {reason_preview}</div>'
             f"{delta_lines}"
@@ -1042,7 +1257,7 @@ def _diff_item(item: Dict[str, object]) -> str:
     return (
         f'<div class="diff-item relevance-{escape(relevance)}" {attrs}>'
         f"<code>{endpoint}</code>"
-        f'<div class="diff-meta">risk {score} | confidence {confidence} | relevance {_relevance_badge(relevance)} | sources {sources}</div>'
+        f'<div class="diff-meta">risk {score} | Extraction confidence: {confidence} | {_relevance_badge(relevance)} | sources {sources}</div>'
         f'<div class="diff-meta">tags {tags}</div>'
         f'<div class="diff-meta">source URLs {source_urls} | reasons {reason_count}</div>'
         f'<div class="diff-meta">reason preview {reason_preview}</div>'
@@ -1136,10 +1351,32 @@ def _compare_panel(runs: list, compare: Dict[str, object]) -> str:
     )
     diff = compare.get("diff")
     error = str(compare.get("error", ""))
+    context = ""
+    if isinstance(diff, dict):
+        previous_target = escape(str(diff.get("previous_target", "") or "unknown"))
+        current_target = escape(str(diff.get("current_target", "") or "unknown"))
+        previous_scope = diff.get("previous_scope", [])
+        current_scope = diff.get("current_scope", [])
+        previous_scope_text = (
+            ", ".join(str(item) for item in previous_scope)
+            if isinstance(previous_scope, list) and previous_scope
+            else "unknown"
+        )
+        current_scope_text = (
+            ", ".join(str(item) for item in current_scope)
+            if isinstance(current_scope, list) and current_scope
+            else "unknown"
+        )
+        context = (
+            '<p class="hint">'
+            f"Base target: <code>{previous_target}</code> | Head target: <code>{current_target}</code><br>"
+            f"Base scope: <code>{escape(previous_scope_text)}</code> | Head scope: <code>{escape(current_scope_text)}</code>"
+            "</p>"
+        )
     diff_block = (
         f'<div class="notice error"><strong>Compare failed</strong><span>{escape(error)}</span></div>'
         if error
-        else _diff_panel(diff) + _compare_diff_details(diff)
+        else context + _diff_panel(diff) + _compare_diff_details(diff)
         if isinstance(diff, dict)
         else '<p class="hint">Select two runs and compare.</p>'
     )
@@ -1208,6 +1445,19 @@ def _scan_result_from_payload(payload: Dict[str, object]) -> ScanResult:
         scope=[str(item) for item in payload.get("scope", []) if item is not None]
         if isinstance(payload.get("scope"), list)
         else [],
+        scan_mode=str(payload.get("scan_mode", "default")),
+        target_fingerprint=str(payload.get("target_fingerprint", "")),
+        scope_fingerprint=str(payload.get("scope_fingerprint", "")),
+        scope_normalization_notes=[
+            str(item)
+            for item in payload.get("scope_normalization_notes", [])
+            if item is not None
+        ]
+        if isinstance(payload.get("scope_normalization_notes"), list)
+        else [],
+        source_coverage=payload.get("source_coverage", {})
+        if isinstance(payload.get("source_coverage"), dict)
+        else {},
         assets=[Asset(**item) for item in _dict_items(payload.get("assets"))],
         endpoints=[Endpoint(**item) for item in _dict_items(payload.get("endpoints"))],
         findings=[Finding(**item) for item in _dict_items(payload.get("findings"))],
@@ -1223,6 +1473,54 @@ def _scan_result_from_payload(payload: Dict[str, object]) -> ScanResult:
 
 def _dict_items(value: object) -> list:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _summary_source_coverage(summary: Dict[str, object]) -> Dict[str, object]:
+    value = summary.get("source_coverage", {}) if isinstance(summary, dict) else {}
+    return value if isinstance(value, dict) else {}
+
+
+def _coverage_section(coverage: Dict[str, object], key: str) -> Dict[str, object]:
+    value = coverage.get(key, {})
+    return value if isinstance(value, dict) else {}
+
+
+def _bool_word(value: object) -> str:
+    return "yes" if bool(value) else "no"
+
+
+def _status_word(value: object) -> str:
+    try:
+        if value is None:
+            return "n/a"
+        return str(int(value))
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _summary_has_budget_warning(summary: Dict[str, object]) -> bool:
+    warnings = summary.get("warnings_list", [])
+    if isinstance(warnings, list):
+        return any("Request budget exceeded; scan stopped early." in str(item) for item in warnings)
+    return False
+
+
+def _scan_mode_options(selected: str) -> str:
+    values = [
+        ("bug-bounty-safe", "Bug bounty safe"),
+        ("passive", "Passive"),
+        ("local-lab", "Local lab"),
+        ("import-only", "Import only"),
+        ("own-app-deep", "Own app deep"),
+    ]
+    chosen = selected.strip().lower()
+    rows = []
+    for value, label in values:
+        flag = " selected" if value == chosen else ""
+        rows.append(
+            f'<option value="{escape(value, quote=True)}"{flag}>{escape(label)}</option>'
+        )
+    return "".join(rows)
 
 
 def _compare_link(href: str) -> str:
@@ -1313,7 +1611,7 @@ def _compare_changed_table(items: list, empty: str) -> str:
             f'<tr class="relevance-{escape(relevance)}" {attrs}>'
             f"<td><code>{endpoint}</code></td>"
             f"<td>{change_details}</td>"
-            f"<td>{current_badge}<br>confidence {escape(confidence)}<br>relevance {_relevance_badge(relevance)}<br>sources {sources}<br>tags {tags}<br>source URLs {escape(str(source_urls))}<br>reasons {escape(str(reason_count))}<br>preview {reason_preview}</td>"
+            f"<td>{current_badge}<br>Extraction confidence: {escape(confidence)}<br>{_relevance_badge(relevance)}<br>sources {sources}<br>tags {tags}<br>source URLs {escape(str(source_urls))}<br>reasons {escape(str(reason_count))}<br>preview {reason_preview}</td>"
             "</tr>"
         )
     return (
@@ -1332,10 +1630,10 @@ def _changed_delta_lines(delta_map: Dict[str, object], use_blocks: bool = False)
     lines = []
     confidence = delta_map.get("extraction_confidence")
     if isinstance(confidence, dict):
-        lines.append(_delta_line("confidence", confidence))
+        lines.append(_delta_line("Extraction confidence", confidence))
     relevance = delta_map.get("app_relevance")
     if isinstance(relevance, dict):
-        lines.append(_delta_line("app relevance", relevance))
+        lines.append(_delta_line("App relevance", relevance))
     tags = delta_map.get("tags")
     if isinstance(tags, dict):
         lines.append(_delta_list_line("tags", tags))
@@ -1375,7 +1673,7 @@ def _risk_badge(score: int) -> str:
 
 def _relevance_badge(value: str) -> str:
     relevance = _diff_relevance({"app_relevance": value})
-    return f'<span class="relevance-badge {escape(relevance)}">app relevance {escape(relevance)}</span>'
+    return f'<span class="relevance-badge {escape(relevance)}">App relevance: {escape(relevance)}</span>'
 
 
 def _endpoint_filter_attrs(item: Dict[str, object], risk_score: Optional[int] = None) -> str:

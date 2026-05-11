@@ -1,6 +1,11 @@
 import unittest
 
-from routehawk.core.diff import build_endpoint_diff, endpoint_key
+from routehawk.core.diff import (
+    build_endpoint_diff,
+    endpoint_key,
+    scope_fingerprint,
+    target_fingerprint,
+)
 
 
 class EndpointDiffTests(unittest.TestCase):
@@ -153,6 +158,55 @@ class EndpointDiffTests(unittest.TestCase):
         self.assertEqual(diff["changed_count"], 0)
         self.assertEqual(diff["unchanged_count"], 1)
         self.assertEqual(diff["changed"], [])
+
+    def test_diff_marks_target_and_scope_changes(self):
+        previous = {
+            "target": "https://app.example.com",
+            "scope": ["example.com"],
+            "target_fingerprint": target_fingerprint("https://app.example.com"),
+            "scope_fingerprint": scope_fingerprint(["example.com"]),
+            "endpoints": [],
+        }
+        current = {
+            "target": "https://api.example.com",
+            "scope": ["api.example.com"],
+            "target_fingerprint": target_fingerprint("https://api.example.com"),
+            "scope_fingerprint": scope_fingerprint(["api.example.com"]),
+            "endpoints": [],
+        }
+
+        diff = build_endpoint_diff(previous, current)
+
+        self.assertTrue(diff["target_changed"])
+        self.assertTrue(diff["scope_changed"])
+        self.assertIn("different target or scope fingerprints", diff["warning"])
+
+    def test_diff_scope_fingerprint_is_order_stable(self):
+        first = scope_fingerprint(["api.example.com", "example.com"])
+        second = scope_fingerprint(["example.com", "api.example.com"])
+        self.assertEqual(first, second)
+
+    def test_diff_keeps_same_target_scope_without_warning(self):
+        previous = {
+            "target": "https://app.example.com",
+            "scope": ["example.com", "*.example.com"],
+            "target_fingerprint": target_fingerprint("https://app.example.com"),
+            "scope_fingerprint": scope_fingerprint(["example.com", "*.example.com"]),
+            "endpoints": [],
+        }
+        current = {
+            "target": "https://app.example.com/any/path",
+            "scope": ["*.example.com", "example.com"],
+            "target_fingerprint": target_fingerprint("https://app.example.com"),
+            "scope_fingerprint": scope_fingerprint(["*.example.com", "example.com"]),
+            "endpoints": [],
+        }
+
+        diff = build_endpoint_diff(previous, current)
+
+        self.assertFalse(diff["target_changed"])
+        self.assertFalse(diff["scope_changed"])
+        self.assertEqual(diff["warning"], "")
 
 
 if __name__ == "__main__":
