@@ -9,6 +9,7 @@ from routehawk.web_app import _compare_panel
 from routehawk.web_app import _diff_panel
 from routehawk.web_app import _history_panel
 from routehawk.web_app import _scan_result_from_payload
+from routehawk.web_app import _split_scope
 from routehawk.web_app import _status_banner
 from routehawk.web_app import RouteHawkWebApp
 
@@ -356,6 +357,65 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("No removed endpoints", html)
         self.assertIn("No changed endpoints", html)
 
+    def test_compare_panel_shows_warning_for_different_target_scope(self):
+        runs = [
+            {"run_id": "20260507-120002", "target": "https://api.example.com", "generated_at": "t2"},
+            {"run_id": "20260507-120001", "target": "https://app.example.com", "generated_at": "t1"},
+        ]
+        compare = {
+            "base": "20260507-120001",
+            "head": "20260507-120002",
+            "diff": {
+                "new_count": 0,
+                "removed_count": 0,
+                "changed_count": 0,
+                "unchanged_count": 0,
+                "new": [],
+                "removed": [],
+                "changed": [],
+                "previous_target": "https://app.example.com",
+                "current_target": "https://api.example.com",
+                "previous_scope": ["example.com"],
+                "current_scope": ["api.example.com"],
+                "target_changed": True,
+                "scope_changed": True,
+                "warning": "Warning: these scans have different target or scope fingerprints. Diff may be misleading.",
+            },
+            "error": "",
+        }
+
+        html = _compare_panel(runs, compare)
+
+        self.assertIn("Compare warning", html)
+        self.assertIn("Base target:", html)
+        self.assertIn("Head target:", html)
+
+    def test_diff_panel_shows_baseline_message(self):
+        html = _diff_panel(
+            {
+                "new_count": 3,
+                "removed_count": 0,
+                "changed_count": 0,
+                "unchanged_count": 0,
+                "new": [],
+                "removed": [],
+                "changed": [],
+                "baseline_message": "No previous scan found for this target/scope. This run is now the baseline.",
+                "warning": "",
+            }
+        )
+
+        self.assertIn("No previous scan found for this target/scope", html)
+
+    def test_split_scope_normalizes_urls(self):
+        values, notes = _split_scope("https://www.whatnot.com,\nhttp://localhost:8088/path\n*.example.com")
+
+        self.assertEqual(values, ["www.whatnot.com", "localhost:8088", "*.example.com"])
+        self.assertIn(
+            "Normalized scope entry: https://www.whatnot.com -> www.whatnot.com",
+            notes,
+        )
+
     def test_compare_context_builds_diff_for_known_runs(self):
         with TemporaryDirectory() as temporary:
             app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
@@ -407,6 +467,87 @@ class WebAppTests(unittest.TestCase):
 
             self.assertEqual(context["error"], "")
             self.assertEqual(context["diff"]["new_count"], 1)
+            self.assertFalse(context["diff"]["target_changed"])
+            self.assertFalse(context["diff"]["scope_changed"])
+
+    def test_latest_diff_uses_same_target_scope_baseline_grouping(self):
+        with TemporaryDirectory() as temporary:
+            app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
+            first = ScanResult(
+                target="https://app.example.com",
+                scope=["example.com"],
+                endpoints=[
+                    Endpoint(
+                        source="javascript",
+                        source_url="https://app.example.com/main.js",
+                        method="GET",
+                        raw_path="/api/users/1",
+                        normalized_path="/api/users/{id}",
+                        risk_score=10,
+                    )
+                ],
+            )
+            app._write_outputs(first)
+            first_diff = app._read_latest_diff()
+            self.assertTrue(first_diff.get("baseline"))
+
+            second = ScanResult(
+                target="https://app.example.com",
+                scope=["example.com"],
+                endpoints=[
+                    Endpoint(
+                        source="javascript",
+                        source_url="https://app.example.com/main.js",
+                        method="GET",
+                        raw_path="/api/users/1",
+                        normalized_path="/api/users/{id}",
+                        risk_score=10,
+                    ),
+                    Endpoint(
+                        source="javascript",
+                        source_url="https://app.example.com/main.js",
+                        method="GET",
+                        raw_path="/api/admin",
+                        normalized_path="/api/admin",
+                        risk_score=50,
+                    ),
+                ],
+            )
+            app._write_outputs(second)
+            second_diff = app._read_latest_diff()
+            self.assertFalse(second_diff.get("baseline"))
+            self.assertEqual(second_diff.get("new_count"), 1)
+
+    def test_latest_diff_does_not_mix_different_targets(self):
+        with TemporaryDirectory() as temporary:
+            app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
+            first = ScanResult(
+                target="https://local.demo",
+                scope=["local.demo"],
+                endpoints=[
+                    Endpoint(
+                        source="javascript",
+                        source_url="https://local.demo/main.js",
+                        method="GET",
+                        raw_path="/api/a",
+                        normalized_path="/api/a",
+                        risk_score=10,
+                    )
+                ],
+            )
+            app._write_outputs(first)
+
+            second = ScanResult(
+                target="https://www.whatnot.com",
+                scope=["www.whatnot.com"],
+                endpoints=[],
+            )
+            app._write_outputs(second)
+            diff = app._read_latest_diff()
+
+            self.assertTrue(diff.get("baseline"))
+            self.assertEqual(diff.get("removed_count"), 0)
+            self.assertEqual(diff.get("new_count"), 0)
 
     def test_rebuilds_scan_result_from_json_payload(self):
         result = _scan_result_from_payload(

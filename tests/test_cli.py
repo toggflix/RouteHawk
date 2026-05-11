@@ -89,6 +89,31 @@ class CliBudgetTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Request budget exceeded; scan stopped early.", result.warnings)
         self.assertEqual(len([w for w in result.warnings if "Request budget exceeded" in w]), 1)
 
+    async def test_run_scan_carries_scope_normalization_and_fingerprints(self):
+        original_client = cli_module.ScopeSafeHttpClient
+        cli_module.ScopeSafeHttpClient = _BudgetStopClient
+        try:
+            validator = ScopeValidator(["www.whatnot.com"])
+            result = await _run_scan(
+                "https://www.whatnot.com/path?x=1",
+                ["www.whatnot.com"],
+                validator,
+                config=None,
+                safe_profile="bug-bounty",
+                scope_normalization_notes=[
+                    "Normalized scope entry: https://www.whatnot.com -> www.whatnot.com"
+                ],
+            )
+        finally:
+            cli_module.ScopeSafeHttpClient = original_client
+
+        self.assertEqual(result.target_fingerprint, "https://www.whatnot.com")
+        self.assertEqual(result.scope_fingerprint, "www.whatnot.com")
+        self.assertIn(
+            "Normalized scope entry: https://www.whatnot.com -> www.whatnot.com",
+            result.warnings,
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -11,7 +11,7 @@ from typing import Dict, Optional, Tuple
 from urllib.parse import parse_qs, urlparse
 
 from routehawk.cli import _result_to_json, _run_scan
-from routehawk.core.diff import build_endpoint_diff
+from routehawk.core.diff import build_endpoint_diff, scope_fingerprint, target_fingerprint
 from routehawk.core.models import (
     Asset,
     Endpoint,
@@ -24,7 +24,7 @@ from routehawk.core.models import (
     ScanResult,
     ScopeConfig,
 )
-from routehawk.core.scope import ScopeValidator
+from routehawk.core.scope import ScopeValidator, normalize_scope_entries
 from routehawk.reports.html import render_html
 from routehawk.reports.markdown import render_markdown
 from routehawk.reports.summary import build_summary
@@ -112,9 +112,9 @@ class RouteHawkWebApp:
             self._redirect(request, "/?error=missing-target-or-scope")
             return
 
-        scope_domains = _split_scope(scope_text)
+        scope_domains, scope_notes = _split_scope(scope_text)
         try:
-            result = self._scan(target, scope_domains)
+            result = self._scan(target, scope_domains, scope_notes)
         except Exception as exc:
             self._write_error(target, scope_domains, str(exc))
             self._redirect(request, "/?error=scan-failed")
@@ -123,7 +123,7 @@ class RouteHawkWebApp:
         self._write_outputs(result)
         self._redirect(request, "/?scan=complete")
 
-    def _scan(self, target: str, scope_domains: list):
+    def _scan(self, target: str, scope_domains: list, scope_notes: list):
         validator = ScopeValidator(scope_domains)
         decision = validator.explain_url(target)
         if not decision.allowed:
@@ -136,12 +136,31 @@ class RouteHawkWebApp:
             scan=ScanOptions(),
             targets=[target],
         )
-        return asyncio.run(_run_scan(target, sorted(set(scope_domains)), validator, config))
+        return asyncio.run(
+            _run_scan(
+                target,
+                sorted(set(scope_domains)),
+                validator,
+                config,
+                scope_normalization_notes=scope_notes,
+            )
+        )
 
     def _write_outputs(self, result) -> None:
         payload = _result_to_json(result)
-        previous_payload = self._read_previous_payload()
+        current_target_fingerprint = result.target_fingerprint or target_fingerprint(result.target)
+        current_scope_fingerprint = result.scope_fingerprint or scope_fingerprint(result.scope)
+        previous_payload = self._read_previous_payload_for_fingerprint(
+            current_target_fingerprint,
+            current_scope_fingerprint,
+        )
         diff = build_endpoint_diff(previous_payload, payload)
+        if previous_payload:
+            diff["baseline"] = False
+            diff["baseline_message"] = ""
+        else:
+            diff["baseline"] = True
+            diff["baseline_message"] = "No previous scan found for this target/scope. This run is now the baseline."
         run_id = datetime.utcnow().strftime("%Y%m%d-%H%M%S")
         history_dir = self.runs_root / run_id
         history_dir.mkdir(parents=True, exist_ok=True)
@@ -160,7 +179,9 @@ class RouteHawkWebApp:
             "run_id": run_id,
             "generated_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
             "target": result.target,
+            "target_fingerprint": current_target_fingerprint,
             "scope": result.scope,
+            "scope_fingerprint": current_scope_fingerprint,
             "assets": summary.asset_count,
             "javascript_files": summary.javascript_file_count,
             "metadata": summary.metadata_count,
@@ -177,15 +198,58 @@ class RouteHawkWebApp:
         self._write_run_files(history_dir, results_json, report_html, report_md, diff_json, metadata)
         record_scan(self.database_path, metadata, payload, diff)
 
-    def _read_previous_payload(self) -> Dict[str, object]:
-        path = self.run_dir / "results.json"
-        if not path.exists():
+    def _read_previous_payload_for_fingerprint(
+        self,
+        current_target_fingerprint: str,
+        current_scope_fingerprint: str,
+    ) -> Dict[str, object]:
+        if not current_target_fingerprint or not current_scope_fingerprint:
             return {}
-        try:
-            data = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+
+        records = list_scan_records(self.database_path, limit=50)
+        for record in records:
+            if (
+                record.target_fingerprint != current_target_fingerprint
+                or record.scope_fingerprint != current_scope_fingerprint
+            ):
+                continue
+            payload = fetch_scan_payload(self.database_path, record.run_id, "result_json")
+            if isinstance(payload, dict):
+                return payload
+
+        if not self.runs_root.exists():
             return {}
-        return data if isinstance(data, dict) else {}
+        for run_dir in sorted(self.runs_root.iterdir(), reverse=True):
+            if not run_dir.is_dir() or run_dir.name == "latest":
+                continue
+            summary_path = run_dir / "summary.json"
+            result_path = run_dir / "results.json"
+            if not summary_path.exists() or not result_path.exists():
+                continue
+            try:
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(summary, dict):
+                continue
+            run_target_fingerprint = str(summary.get("target_fingerprint") or "")
+            run_scope_fingerprint = str(summary.get("scope_fingerprint") or "")
+            if not run_target_fingerprint:
+                run_target_fingerprint = target_fingerprint(str(summary.get("target") or ""))
+            if not run_scope_fingerprint:
+                run_scope_fingerprint = scope_fingerprint(summary.get("scope") or [])
+            if (
+                run_target_fingerprint != current_target_fingerprint
+                or run_scope_fingerprint != current_scope_fingerprint
+            ):
+                continue
+            try:
+                payload = json.loads(result_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if isinstance(payload, dict):
+                return payload
+        return {}
 
     def _write_error(self, target: str, scope_domains: list, message: str) -> None:
         error = {
@@ -687,7 +751,9 @@ class RouteHawkWebApp:
                     "run_id": record.run_id,
                     "generated_at": record.generated_at,
                     "target": record.target,
+                    "target_fingerprint": record.target_fingerprint,
                     "scope": record.scope,
+                    "scope_fingerprint": record.scope_fingerprint,
                     "endpoints": record.endpoint_count,
                     "findings": record.finding_count,
                     "high_risk": record.high_risk_count,
@@ -713,6 +779,11 @@ class RouteHawkWebApp:
                 data = json.loads(summary_path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 continue
+            if not isinstance(data, dict):
+                continue
+            data.setdefault("target_fingerprint", target_fingerprint(str(data.get("target", ""))))
+            scope_values = data.get("scope", []) if isinstance(data.get("scope"), list) else []
+            data.setdefault("scope_fingerprint", scope_fingerprint(scope_values))
             runs.append(data)
             if len(runs) >= 8:
                 break
@@ -871,13 +942,13 @@ def _form_value(form: Dict[str, list], key: str) -> str:
     return values[0].strip()
 
 
-def _split_scope(value: str) -> list:
+def _split_scope(value: str) -> tuple[list, list]:
     parts = []
     for chunk in value.replace(",", "\n").splitlines():
         cleaned = chunk.strip()
         if cleaned:
             parts.append(cleaned)
-    return parts
+    return normalize_scope_entries(parts)
 
 
 def _safe_run_id(value: str) -> bool:
@@ -966,12 +1037,26 @@ def _diff_panel(diff: Dict[str, object]) -> str:
     removed_count = int(diff.get("removed_count", 0) or 0)
     changed_count = int(diff.get("changed_count", 0) or 0)
     unchanged_count = int(diff.get("unchanged_count", 0) or 0)
+    warning = str(diff.get("warning", "") or "").strip()
+    baseline_message = str(diff.get("baseline_message", "") or "").strip()
+    notice = ""
+    if baseline_message:
+        notice = (
+            '<div class="notice"><strong>Baseline</strong>'
+            f"<span>{escape(baseline_message)}</span></div>"
+        )
+    elif warning:
+        notice = (
+            '<div class="notice error"><strong>Compare warning</strong>'
+            f"<span>{escape(warning)}</span></div>"
+        )
     summary = (
         f'<p class="hint">New {new_count} | removed {removed_count} | changed {changed_count} | '
         f'unchanged {unchanged_count}</p>'
     )
     return (
-        summary
+        notice
+        + summary
         + '<div class="diff-grid">'
         + _diff_column("New endpoints", diff.get("new", []), "No new endpoints.")
         + _diff_column("Removed endpoints", diff.get("removed", []), "No removed endpoints.")
@@ -1136,10 +1221,32 @@ def _compare_panel(runs: list, compare: Dict[str, object]) -> str:
     )
     diff = compare.get("diff")
     error = str(compare.get("error", ""))
+    context = ""
+    if isinstance(diff, dict):
+        previous_target = escape(str(diff.get("previous_target", "") or "unknown"))
+        current_target = escape(str(diff.get("current_target", "") or "unknown"))
+        previous_scope = diff.get("previous_scope", [])
+        current_scope = diff.get("current_scope", [])
+        previous_scope_text = (
+            ", ".join(str(item) for item in previous_scope)
+            if isinstance(previous_scope, list) and previous_scope
+            else "unknown"
+        )
+        current_scope_text = (
+            ", ".join(str(item) for item in current_scope)
+            if isinstance(current_scope, list) and current_scope
+            else "unknown"
+        )
+        context = (
+            '<p class="hint">'
+            f"Base target: <code>{previous_target}</code> | Head target: <code>{current_target}</code><br>"
+            f"Base scope: <code>{escape(previous_scope_text)}</code> | Head scope: <code>{escape(current_scope_text)}</code>"
+            "</p>"
+        )
     diff_block = (
         f'<div class="notice error"><strong>Compare failed</strong><span>{escape(error)}</span></div>'
         if error
-        else _diff_panel(diff) + _compare_diff_details(diff)
+        else context + _diff_panel(diff) + _compare_diff_details(diff)
         if isinstance(diff, dict)
         else '<p class="hint">Select two runs and compare.</p>'
     )
@@ -1207,6 +1314,15 @@ def _scan_result_from_payload(payload: Dict[str, object]) -> ScanResult:
         target=str(payload.get("target", "unknown")),
         scope=[str(item) for item in payload.get("scope", []) if item is not None]
         if isinstance(payload.get("scope"), list)
+        else [],
+        target_fingerprint=str(payload.get("target_fingerprint", "")),
+        scope_fingerprint=str(payload.get("scope_fingerprint", "")),
+        scope_normalization_notes=[
+            str(item)
+            for item in payload.get("scope_normalization_notes", [])
+            if item is not None
+        ]
+        if isinstance(payload.get("scope_normalization_notes"), list)
         else [],
         assets=[Asset(**item) for item in _dict_items(payload.get("assets"))],
         endpoints=[Endpoint(**item) for item in _dict_items(payload.get("endpoints"))],

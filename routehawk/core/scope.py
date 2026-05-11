@@ -31,32 +31,37 @@ class ScopeValidator:
             return ScopeDecision(False, "URL scheme is not HTTP or HTTPS")
         if not parsed.hostname:
             return ScopeDecision(False, "URL does not contain a hostname")
+        if parsed.port is not None:
+            decision = self.explain_host(f"{parsed.hostname}:{parsed.port}")
+            if decision.allowed:
+                return decision
         return self.explain_host(parsed.hostname)
 
     def explain_host(self, host: str) -> ScopeDecision:
         normalized = self._clean_domain(host)
-        if self._looks_like_ip(normalized):
-            return self._explain_ip(normalized)
+        host_only = _host_without_port(normalized)
+        if self._looks_like_ip(host_only):
+            return self._explain_ip(host_only)
 
         for pattern in self.domains:
             if pattern.startswith("*."):
                 parent = pattern[2:]
-                if normalized.endswith("." + parent) and normalized != parent:
+                if host_only.endswith("." + parent) and host_only != parent:
                     return ScopeDecision(True, f"Matched wildcard scope {pattern}")
                 continue
 
-            if normalized == pattern:
+            if ":" in pattern:
+                candidate = normalized
+            else:
+                candidate = host_only
+            if candidate == pattern:
                 return ScopeDecision(True, f"Matched exact scope {pattern}")
 
         return ScopeDecision(False, "Hostname is outside configured scope")
 
     @staticmethod
     def _clean_domain(value: str) -> str:
-        value = value.strip().lower().rstrip(".")
-        if "://" in value:
-            parsed = urlparse(value)
-            return (parsed.hostname or value).lower().rstrip(".")
-        return value
+        return normalize_scope_entry(value)
 
     @staticmethod
     def _looks_like_ip(value: str) -> bool:
@@ -81,3 +86,65 @@ def reject_out_of_scope_redirects(redirect_chain: List[str], validator: ScopeVal
             return ScopeDecision(False, f"Redirect leaves scope at {url}: {decision.reason}")
     return ScopeDecision(True, "Redirect chain stayed in scope")
 
+
+def normalize_scope_entries(entries: Iterable[str]) -> tuple[List[str], List[str]]:
+    normalized: List[str] = []
+    notes: List[str] = []
+    seen = set()
+    for raw in entries:
+        candidate = str(raw or "").strip()
+        if not candidate:
+            continue
+        value = normalize_scope_entry(candidate)
+        if not value:
+            continue
+        if value not in seen:
+            seen.add(value)
+            normalized.append(value)
+        if value != candidate:
+            notes.append(f"Normalized scope entry: {candidate} -> {value}")
+    return normalized, notes
+
+
+def normalize_scope_entry(value: str) -> str:
+    cleaned = str(value or "").strip()
+    if not cleaned:
+        return ""
+
+    wildcard = cleaned.startswith("*.")
+    body = cleaned[2:] if wildcard else cleaned
+    normalized_body = _normalize_scope_body(body)
+    if not normalized_body:
+        return ""
+    return f"*.{normalized_body}" if wildcard else normalized_body
+
+
+def _normalize_scope_body(value: str) -> str:
+    cleaned = value.strip().rstrip(".")
+    if not cleaned:
+        return ""
+
+    if "://" in cleaned:
+        parsed = urlparse(cleaned)
+        if parsed.hostname:
+            host = parsed.hostname.lower().rstrip(".")
+            if parsed.port is not None:
+                return f"{host}:{parsed.port}"
+            return host
+
+    if cleaned.startswith("//"):
+        parsed = urlparse(f"http:{cleaned}")
+        if parsed.hostname:
+            host = parsed.hostname.lower().rstrip(".")
+            if parsed.port is not None:
+                return f"{host}:{parsed.port}"
+            return host
+
+    host_candidate = cleaned.split("/", 1)[0].split("?", 1)[0].split("#", 1)[0]
+    return host_candidate.lower().rstrip(".")
+
+
+def _host_without_port(value: str) -> str:
+    if value.count(":") == 1 and not value.startswith("["):
+        return value.rsplit(":", 1)[0]
+    return value

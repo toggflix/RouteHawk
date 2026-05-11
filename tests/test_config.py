@@ -74,6 +74,30 @@ scope:
             self.assertFalse(config.scan.check_auth_behavior)
             self.assertEqual(config.scan.auth_probe_limit, 0)
 
+    def test_scope_domains_are_normalized_from_urls(self):
+        with TemporaryDirectory() as temporary:
+            path = Path(temporary) / "routehawk-scope.yaml"
+            path.write_text(
+                """
+program: test-program
+targets:
+  - https://www.whatnot.com
+scope:
+  domains:
+    - https://www.whatnot.com
+    - http://localhost:8088/path
+    - "*.example.com"
+""",
+                encoding="utf-8",
+            )
+
+            config = load_config(str(path))
+
+            self.assertEqual(
+                config.scope.domains,
+                ["www.whatnot.com", "localhost:8088", "*.example.com"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

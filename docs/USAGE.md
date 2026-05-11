@@ -67,6 +67,8 @@ http://127.0.0.1:8090/diff/latest.json
 
 Historical runs include their own `diff.json` link in the scan history panel.
 The compare panel also supports selecting any two runs and rendering a detailed endpoint-level drilldown.
+Latest diff now uses the previous run from the same target/scope fingerprint group only. If no previous run exists for that target/scope, the run is marked as baseline.
+If manual compare selects runs with different target/scope fingerprints, the UI shows a warning that counts may be misleading.
 The run compare drilldown separates `new`, `removed`, and `changed` endpoints so review queues stay readable.
 Changed endpoints include explicit deltas for risk score, extraction confidence, tags, and sources when those values differ between runs.
 Changed endpoints also surface source URL count and risk reason previews for quick triage context.
@@ -174,6 +176,14 @@ py -m routehawk history --workspace . --limit 10
 ```
 
 Latest diff output is most meaningful when comparing scans from the same target and scope.
+
+Scope inputs are normalized before validation:
+
+- `https://www.whatnot.com` -> `www.whatnot.com`
+- `http://localhost:8088/path` -> `localhost:8088`
+- `*.example.com` remains `*.example.com`
+
+Normalization notes are included in scan warnings to make scope cleaning explicit.
 
 ## Bug Bounty Safe Usage
 

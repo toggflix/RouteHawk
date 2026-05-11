@@ -36,7 +36,7 @@ from routehawk.collectors.robots import parse_robots_txt
 from routehawk.collectors.security_txt import parse_security_txt
 from routehawk.collectors.sitemap import parse_sitemap_xml
 from routehawk.core.config import load_config
-from routehawk.core.diff import build_endpoint_diff
+from routehawk.core.diff import build_endpoint_diff, scope_fingerprint, target_fingerprint
 from routehawk.core.http_client import RequestBudgetExceeded, ScopeSafeHttpClient
 from routehawk.core.models import (
     Asset,
@@ -49,7 +49,7 @@ from routehawk.core.models import (
     ScanResult,
     SuppressionConfig,
 )
-from routehawk.core.scope import ScopeValidator
+from routehawk.core.scope import ScopeValidator, normalize_scope_entries
 from routehawk.importers.httpx_json import import_httpx_json
 from routehawk.importers.nmap_xml import import_nmap_xml
 from routehawk.importers.nuclei_json import import_nuclei_json
@@ -151,9 +151,10 @@ def _scan(args: argparse.Namespace) -> int:
     if not target:
         raise SystemExit("scan requires --target or a config file with scan target support")
 
-    scope_domains = list(args.scope)
+    scope_inputs = list(args.scope)
     if config:
-        scope_domains.extend(config.scope.domains)
+        scope_inputs.extend(config.scope.domains)
+    scope_domains, scope_notes = normalize_scope_entries(scope_inputs)
 
     scope_cidrs = config.scope.cidrs if config else []
     validator = ScopeValidator(scope_domains, scope_cidrs)
@@ -163,10 +164,11 @@ def _scan(args: argparse.Namespace) -> int:
     result = asyncio.run(
         _run_scan(
             target,
-            sorted(set(scope_domains)),
+            scope_domains,
             validator,
             config,
             safe_profile=args.safe_profile,
+            scope_normalization_notes=scope_notes,
         )
     )
     output = _result_to_json(result)
@@ -191,13 +193,23 @@ async def _run_scan(
     validator: ScopeValidator,
     config,
     safe_profile: Optional[str] = None,
+    scope_normalization_notes: Optional[list] = None,
 ) -> ScanResult:
     rules = config.rules if config else RulesConfig()
     options = config.scan if config else ScanOptions()
     rules, options = _apply_safe_profile(rules, options, safe_profile)
     suppression = config.suppression if config else SuppressionConfig()
     client = ScopeSafeHttpClient(validator, rules)
-    result = ScanResult(target=target, scope=scope_domains)
+    result = ScanResult(
+        target=target,
+        scope=scope_domains,
+        target_fingerprint=target_fingerprint(target),
+        scope_fingerprint=scope_fingerprint(scope_domains),
+        scope_normalization_notes=list(scope_normalization_notes or []),
+    )
+    for note in result.scope_normalization_notes:
+        if note not in result.warnings:
+            result.warnings.append(note)
     root_url = _origin(target)
     budget_exceeded = False
 
@@ -790,6 +802,11 @@ def _report(args: argparse.Namespace) -> int:
     result = ScanResult(
         target=data.get("target", "unknown"),
         scope=data.get("scope", []),
+        target_fingerprint=str(data.get("target_fingerprint", "")),
+        scope_fingerprint=str(data.get("scope_fingerprint", "")),
+        scope_normalization_notes=[str(item) for item in data.get("scope_normalization_notes", []) if item is not None]
+        if isinstance(data.get("scope_normalization_notes"), list)
+        else [],
         assets=assets,
         endpoints=endpoints,
         findings=findings,
@@ -875,7 +892,9 @@ def _history_records(workspace: Path, limit: int) -> list:
                 "run_id": item.run_id,
                 "generated_at": item.generated_at,
                 "target": item.target,
+                "target_fingerprint": item.target_fingerprint,
                 "scope": item.scope,
+                "scope_fingerprint": item.scope_fingerprint,
                 "endpoints": item.endpoint_count,
                 "findings": item.finding_count,
                 "high_risk": item.high_risk_count,
@@ -907,7 +926,11 @@ def _history_records(workspace: Path, limit: int) -> list:
                 "run_id": str(summary.get("run_id", run_dir.name)),
                 "generated_at": str(summary.get("generated_at", "")),
                 "target": str(summary.get("target", "")),
+                "target_fingerprint": str(summary.get("target_fingerprint", ""))
+                or target_fingerprint(str(summary.get("target", ""))),
                 "scope": summary.get("scope", []) if isinstance(summary.get("scope"), list) else [],
+                "scope_fingerprint": str(summary.get("scope_fingerprint", ""))
+                or scope_fingerprint(summary.get("scope", []) if isinstance(summary.get("scope"), list) else []),
                 "endpoints": _safe_int(summary.get("endpoints")),
                 "findings": _safe_int(summary.get("findings")),
                 "high_risk": _safe_int(summary.get("high_risk")),
@@ -1038,6 +1061,9 @@ def _result_to_json(result: ScanResult) -> dict:
     return {
         "target": result.target,
         "scope": result.scope,
+        "target_fingerprint": result.target_fingerprint,
+        "scope_fingerprint": result.scope_fingerprint,
+        "scope_normalization_notes": result.scope_normalization_notes,
         "assets": [asset.to_dict() for asset in result.assets],
         "javascript_files": [item.to_dict() for item in result.javascript_files],
         "metadata": [item.to_dict() for item in result.metadata],

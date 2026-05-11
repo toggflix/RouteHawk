@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from typing import Dict, Iterable, List, Optional
+from urllib.parse import urlparse
+
+from routehawk.core.scope import normalize_scope_entries
 
 
 def endpoint_key(endpoint: Dict[str, object]) -> str:
@@ -24,6 +27,20 @@ def build_endpoint_diff(previous: Dict[str, object], current: Dict[str, object])
         if changed_entry is not None:
             changed_entries.append(changed_entry)
 
+    previous_target = _payload_target_origin(previous)
+    current_target = _payload_target_origin(current)
+    previous_scope = _payload_scope_values(previous)
+    current_scope = _payload_scope_values(current)
+    previous_target_fingerprint = _payload_target_fingerprint(previous)
+    current_target_fingerprint = _payload_target_fingerprint(current)
+    previous_scope_fingerprint = _payload_scope_fingerprint(previous)
+    current_scope_fingerprint = _payload_scope_fingerprint(current)
+    target_changed = bool(previous_target_fingerprint and current_target_fingerprint and previous_target_fingerprint != current_target_fingerprint)
+    scope_changed = bool(previous_scope_fingerprint and current_scope_fingerprint and previous_scope_fingerprint != current_scope_fingerprint)
+    warning = ""
+    if target_changed or scope_changed:
+        warning = "Warning: these scans have different target or scope fingerprints. Diff may be misleading."
+
     return {
         "new_count": len(new_keys),
         "removed_count": len(removed_keys),
@@ -32,7 +49,39 @@ def build_endpoint_diff(previous: Dict[str, object], current: Dict[str, object])
         "new": [_endpoint_summary(current_map[key]) for key in new_keys],
         "removed": [_endpoint_summary(previous_map[key]) for key in removed_keys],
         "changed": changed_entries,
+        "previous_target": previous_target,
+        "current_target": current_target,
+        "previous_scope": previous_scope,
+        "current_scope": current_scope,
+        "previous_target_fingerprint": previous_target_fingerprint,
+        "current_target_fingerprint": current_target_fingerprint,
+        "previous_scope_fingerprint": previous_scope_fingerprint,
+        "current_scope_fingerprint": current_scope_fingerprint,
+        "target_changed": target_changed,
+        "scope_changed": scope_changed,
+        "warning": warning,
     }
+
+
+def target_fingerprint(target: str) -> str:
+    return normalize_target_origin(target)
+
+
+def scope_fingerprint(scope: Iterable[object]) -> str:
+    normalized, _ = normalize_scope_entries([str(item) for item in scope if item is not None])
+    if not normalized:
+        return ""
+    return ",".join(sorted(set(normalized)))
+
+
+def normalize_target_origin(value: str) -> str:
+    parsed = urlparse(str(value or "").strip())
+    if parsed.scheme in {"http", "https"} and parsed.hostname:
+        host = parsed.hostname.lower().rstrip(".")
+        if parsed.port is not None:
+            return f"{parsed.scheme.lower()}://{host}:{parsed.port}"
+        return f"{parsed.scheme.lower()}://{host}"
+    return str(value or "").strip()
 
 
 def _endpoint_map(endpoints: object) -> Dict[str, Dict[str, object]]:
@@ -47,6 +96,35 @@ def _endpoint_map(endpoints: object) -> Dict[str, Dict[str, object]]:
         if key.strip():
             mapped[key] = endpoint
     return mapped
+
+
+def _payload_target_origin(payload: Dict[str, object]) -> str:
+    target = str(payload.get("target") or "").strip()
+    if not target:
+        return ""
+    return normalize_target_origin(target)
+
+
+def _payload_scope_values(payload: Dict[str, object]) -> List[str]:
+    values = payload.get("scope")
+    if not isinstance(values, list):
+        return []
+    normalized, _ = normalize_scope_entries([str(value) for value in values if value is not None])
+    return normalized
+
+
+def _payload_target_fingerprint(payload: Dict[str, object]) -> str:
+    value = str(payload.get("target_fingerprint") or "").strip()
+    if value:
+        return value
+    return target_fingerprint(_payload_target_origin(payload))
+
+
+def _payload_scope_fingerprint(payload: Dict[str, object]) -> str:
+    value = str(payload.get("scope_fingerprint") or "").strip()
+    if value:
+        return value
+    return scope_fingerprint(_payload_scope_values(payload))
 
 
 def _endpoint_summary(endpoint: Dict[str, object]) -> Dict[str, object]:

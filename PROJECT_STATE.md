@@ -1,6 +1,6 @@
 # RouteHawk Project State
 
-Last updated: 2026-05-09
+Last updated: 2026-05-11
 
 ## Project
 
@@ -179,9 +179,12 @@ Dashboard:
 - run compare detailed endpoint drilldown tables with explicit new/removed/changed sections
 - changed endpoint details include risk/confidence/tag/source delta summaries
 - dashboard endpoint filters for app relevance, extraction confidence, source, and manual-candidate status
+- latest diff now auto-compares only against the previous run in the same target/scope fingerprint group
+- compare view shows explicit warning when selected runs have different target/scope fingerprints
 - readability-focused history cards (run id + compact KPI blocks)
 - persistent triage storage in `.routehawk\triage.json`
 - scan metadata persisted to `.routehawk\routehawk.sqlite`
+- scope input normalization for URL-like entries (for CLI config and dashboard form)
 
 Docs/demo:
 
@@ -200,6 +203,7 @@ Docs/demo:
 - manual candidate generation is relevance-aware and suppresses low relevance routes
 - dashboard and reports now surface app relevance alongside extraction confidence
 - v0.2 release-prep docs added: CHANGELOG, SECURITY, CONTRIBUTING, release checklist, screenshot policy
+- target-aware history/diff and scope input normalization workflow improvements added
 
 Automation:
 

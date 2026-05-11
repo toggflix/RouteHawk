@@ -131,6 +131,9 @@ class MetadataRecord:
 class ScanResult:
     target: str
     scope: List[str]
+    target_fingerprint: str = ""
+    scope_fingerprint: str = ""
+    scope_normalization_notes: List[str] = field(default_factory=list)
     assets: List[Asset] = field(default_factory=list)
     endpoints: List[Endpoint] = field(default_factory=list)
     findings: List[Finding] = field(default_factory=list)

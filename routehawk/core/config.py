@@ -10,6 +10,7 @@ from routehawk.core.models import (
     ScopeConfig,
     SuppressionConfig,
 )
+from routehawk.core.scope import normalize_scope_entries
 
 
 def load_config(path: str) -> RouteHawkConfig:
@@ -20,10 +21,15 @@ def load_config(path: str) -> RouteHawkConfig:
     scan_data = data.get("scan", {})
     suppression_data = data.get("suppression", {})
 
+    raw_scope_domains = scope_data.get("domains", [])
+    if not isinstance(raw_scope_domains, list):
+        raw_scope_domains = [str(raw_scope_domains)] if raw_scope_domains else []
+    scope_domains, _ = normalize_scope_entries(raw_scope_domains)
+
     return RouteHawkConfig(
         program=data.get("program", "routehawk-program"),
         scope=ScopeConfig(
-            domains=list(scope_data.get("domains", [])),
+            domains=scope_domains,
             cidrs=list(scope_data.get("cidrs", [])),
         ),
         rules=RulesConfig(
