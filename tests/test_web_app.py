@@ -85,6 +85,11 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("app relevance: medium -> high", html)
         self.assertIn("app relevance high", html)
         self.assertIn("relevance-low", html)
+        self.assertIn('data-dashboard-endpoint="true"', html)
+        self.assertIn('data-relevance="high"', html)
+        self.assertIn('data-confidence="high"', html)
+        self.assertIn('data-sources="openapi"', html)
+        self.assertIn('data-manual-candidate="true"', html)
         self.assertIn("sources: +[openapi] -[none]", html)
         self.assertIn("Open Diff JSON", html)
         self.assertIn("Showing 1", html)
@@ -176,6 +181,21 @@ class WebAppTests(unittest.TestCase):
             self.assertIn('id="scan-submit"', html)
             self.assertIn('button.disabled = true', html)
             self.assertIn('button.textContent = "Scanning..."', html)
+
+    def test_dashboard_endpoint_filters_render(self):
+        with TemporaryDirectory() as temporary:
+            app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
+
+            html = app._dashboard()
+
+            self.assertIn('id="dashboard-filter-relevance"', html)
+            self.assertIn('value="hide-low"', html)
+            self.assertIn('id="dashboard-filter-confidence"', html)
+            self.assertIn('id="dashboard-filter-source"', html)
+            self.assertIn('id="dashboard-filter-manual"', html)
+            self.assertIn("Manual candidates only", html)
+            self.assertIn("No endpoints match the selected filters.", html)
+            self.assertIn("applyEndpointFilters", html)
 
     def test_dashboard_status_banners_render_query_feedback(self):
         success = _status_banner({"scan": ["complete"]}, {"endpoints": 9, "findings": 8}, "")
@@ -304,6 +324,10 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("app relevance: medium -> high", html)
         self.assertIn("App Relevance", html)
         self.assertIn("app relevance high", html)
+        self.assertIn('data-dashboard-endpoint="true"', html)
+        self.assertIn('data-relevance="high"', html)
+        self.assertIn('data-confidence="high"', html)
+        self.assertIn('data-sources="openapi"', html)
         self.assertIn("risk-badge", html)
 
     def test_compare_panel_shows_empty_states_for_sections(self):

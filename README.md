@@ -1,6 +1,12 @@
 # RouteHawk
 
+[![CI](https://github.com/toggflix/RouteHawk/actions/workflows/ci.yml/badge.svg)](https://github.com/toggflix/RouteHawk/actions/workflows/ci.yml)
+![Python 3.9+](https://img.shields.io/badge/python-3.9%2B-blue)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 RouteHawk is a local-first, scope-safe API reconnaissance workspace that turns noisy endpoint discovery into prioritized, evidence-backed manual review tasks.
+
+It is built for API security learning, bug bounty preparation, endpoint discovery, JavaScript endpoint extraction, OpenAPI reconnaissance, endpoint intelligence, manual review workflow, and scope-safe recon.
 
 ## What It Does
 
@@ -9,8 +15,9 @@ RouteHawk is a local-first, scope-safe API reconnaissance workspace that turns n
 - Classifies interesting API patterns
 - Scores endpoints with risk reason breakdowns
 - Tracks endpoint extraction confidence
-- Generates Markdown/HTML/JSON reports
-- Provides dashboard history, diff, compare, and triage
+- Tracks app relevance so first-party routes are easier to separate from third-party noise
+- Generates Markdown, HTML, and JSON reports
+- Provides dashboard history, diff, compare, filtering, and triage
 - Imports external recon outputs
 
 ## What RouteHawk Does Not Do
@@ -27,6 +34,21 @@ RouteHawk is designed for authorized, low-impact evidence collection and manual 
 
 Use RouteHawk only on targets you are authorized to test. For bug bounty programs, follow scope, rate limits, and rules of engagement. RouteHawk does not perform exploitation or payload scanning.
 
+## Who This Is For
+
+- Bug bounty learners working inside explicit program scope
+- API security learners studying endpoint inventory and prioritization
+- Developers reviewing their own API surface
+- Authorized security reviewers who want local-first evidence organization
+
+## Who This Is Not For
+
+- People looking for exploit automation
+- Brute force tooling
+- Payload scanners
+- Unauthorized scanning
+- Destructive testing workflows
+
 ## Quick Demo
 
 1. Install and start the local demo target:
@@ -39,12 +61,12 @@ py labs/demo_server.py
 2. In a second terminal, run a scan and render reports:
 
 ```powershell
-py -m routehawk scan --config config.local-lab.yaml --out results.json
+py -m routehawk scan --config config.local-lab.yaml --safe-profile bug-bounty --out results.json
 py -m routehawk report --input results.json --out report.md
 py -m routehawk report --input results.json --out report.html
 ```
 
-3. Open the generated report and inspect prioritized manual review candidates.
+3. Open `report.html` locally and inspect prioritized manual review candidates.
 
 Demo artifacts committed in this repository:
 
@@ -65,11 +87,12 @@ Open: `http://127.0.0.1:8090`
 From the dashboard you can:
 
 - run authorized scope-safe scans
-- review latest reports (HTML/Markdown/JSON)
+- review latest reports in HTML, Markdown, and JSON
 - compare historical runs
+- filter endpoint diffs by relevance, extraction confidence, source, and manual-candidate status
 - triage findings locally
 
-Compare output highlights endpoint-level `new`, `removed`, and `changed` sections with risk/confidence/tag/source deltas.
+Compare output highlights endpoint-level `new`, `removed`, and `changed` sections with risk, confidence, relevance, tag, and source context.
 
 ## Core CLI
 
@@ -96,7 +119,8 @@ py -m routehawk import-file --type nmap --input nmap.xml --out imported-nmap.jso
 RouteHawk helps move from raw recon noise to manual review decisions:
 
 - one merged endpoint inventory across multiple evidence sources
-- explicit confidence and risk reasoning for prioritization
+- explicit extraction confidence, app relevance, and risk reasoning
+- relevance-aware manual candidate generation
 - stable local history for diffs and repeated review cycles
 - report formats suitable for notes, collaboration, and handoff
 
@@ -106,17 +130,18 @@ RouteHawk enforces a scope-first model:
 
 - explicit scope domains
 - out-of-scope redirect rejection
-- polite request behavior with configurable concurrency/rate/retry controls
+- polite request behavior with configurable concurrency, rate, retry, and request-budget controls
 
 Example request controls:
 
 ```yaml
 rules:
-  max_rps_per_host: 2
-  max_concurrency: 20
-  max_retries: 2
-  retry_backoff_seconds: 0.5
+  max_rps_per_host: 1
+  max_concurrency: 2
+  max_retries: 1
+  retry_backoff_seconds: 1.0
   respect_retry_after: true
+  request_budget_per_scan: 500
 ```
 
 Optional endpoint suppression rules:
@@ -131,6 +156,19 @@ suppression:
     - "/api/internal/cache/\\d+"
 ```
 
+## Recommended GitHub Topics
+
+- `api-security`
+- `bug-bounty`
+- `recon`
+- `endpoint-discovery`
+- `api-recon`
+- `javascript-analysis`
+- `openapi`
+- `security-tools`
+- `dashboard`
+- `python`
+
 ## CI
 
 - `.github/workflows/ci.yml`: unit tests, compile checks, CLI smoke
@@ -138,6 +176,8 @@ suppression:
 
 ## Additional Docs
 
-- `docs/PRODUCT.md`
-- `docs/USAGE.md`
-- `PROJECT_STATE.md`
+- [`docs/PRODUCT.md`](docs/PRODUCT.md)
+- [`docs/USAGE.md`](docs/USAGE.md)
+- [`docs/ROADMAP.md`](docs/ROADMAP.md)
+- [`docs/RELEASE.md`](docs/RELEASE.md)
+- [`PROJECT_STATE.md`](PROJECT_STATE.md)

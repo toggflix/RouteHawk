@@ -178,6 +178,7 @@ Dashboard:
 - run compare form for any two historical runs
 - run compare detailed endpoint drilldown tables with explicit new/removed/changed sections
 - changed endpoint details include risk/confidence/tag/source delta summaries
+- dashboard endpoint filters for app relevance, extraction confidence, source, and manual-candidate status
 - readability-focused history cards (run id + compact KPI blocks)
 - persistent triage storage in `.routehawk\triage.json`
 - scan metadata persisted to `.routehawk\routehawk.sqlite`
@@ -198,6 +199,7 @@ Docs/demo:
 - app relevance scoring added to separate target-application likelihood from security risk score
 - manual candidate generation is relevance-aware and suppresses low relevance routes
 - dashboard and reports now surface app relevance alongside extraction confidence
+- v0.2 release-prep docs added: CHANGELOG, SECURITY, CONTRIBUTING, release checklist, screenshot policy
 
 Automation:
 
@@ -223,7 +225,7 @@ Demo lab:
 Latest test command passed:
 
 ```text
-77 tests passed
+93 tests OK
 ```
 
 Latest compile check passed:
@@ -276,12 +278,19 @@ RouteHawk differentiators:
 
 High priority:
 
-- Add safer HTML extraction heuristics if HTML endpoint extraction is re-enabled later.
-- Add README/dashboard screenshots for first-visit visual orientation.
+- dashboard filters polish
+- first-party vs third-party source classification
+- README/dashboard screenshots
+- v0.2 release packaging
 
 Medium priority:
 
-- Expand compare panel details with per-endpoint drilldown pages.
+- Katana importer
+- Burp sitemap importer
+- Postman collection importer
+- finding notes/manual review notes
+- stronger workspace/program profiles
+- coverage/lint CI
 
 Security wording:
 

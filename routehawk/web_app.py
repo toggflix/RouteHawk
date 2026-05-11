@@ -346,6 +346,29 @@ class RouteHawkWebApp:
     }}
     .diff-column h3 {{ margin: 0 0 8px; font-size: 15px; }}
     .diff-list {{ display: grid; gap: 8px; }}
+    .endpoint-filter-grid {{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      align-items: end;
+    }}
+    .endpoint-filter-grid select {{
+      width: 100%;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      background: #fff;
+    }}
+    .filter-toggle {{
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-height: 38px;
+      color: var(--ink);
+      font-size: 13px;
+    }}
+    .filter-toggle input {{ width: auto; }}
     .compare-form {{
       display: grid;
       grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) auto;
@@ -423,6 +446,7 @@ class RouteHawkWebApp:
       font-weight: 700;
     }}
     .relevance-low {{ opacity: .7; }}
+    .dashboard-hidden {{ display: none !important; }}
     .diff-item {{
       border-top: 1px solid var(--line);
       padding-top: 8px;
@@ -466,6 +490,47 @@ class RouteHawkWebApp:
       </section>
     </div>
     <section class="panel" style="margin-top: 18px;">
+      <h2>Endpoint Filters</h2>
+      <div class="endpoint-filter-grid">
+        <div>
+          <label for="dashboard-filter-relevance">Relevance</label>
+          <select id="dashboard-filter-relevance">
+            <option value="all">All relevance</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="hide-low">Hide low</option>
+          </select>
+        </div>
+        <div>
+          <label for="dashboard-filter-confidence">Extraction confidence</label>
+          <select id="dashboard-filter-confidence">
+            <option value="all">All confidence</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+        <div>
+          <label for="dashboard-filter-source">Source</label>
+          <select id="dashboard-filter-source">
+            <option value="all">All sources</option>
+            <option value="javascript">javascript</option>
+            <option value="openapi">openapi</option>
+            <option value="robots">robots</option>
+            <option value="sitemap">sitemap</option>
+            <option value="graphql">graphql</option>
+            <option value="security.txt">security.txt</option>
+          </select>
+        </div>
+        <label class="filter-toggle" for="dashboard-filter-manual">
+          <input id="dashboard-filter-manual" type="checkbox">
+          Manual candidates only
+        </label>
+      </div>
+      <p id="dashboard-filter-empty" class="hint hidden">No endpoints match the selected filters.</p>
+    </section>
+    <section class="panel" style="margin-top: 18px;">
       <h2>Latest Diff</h2>
       {diff_panel}
     </section>
@@ -488,6 +553,47 @@ class RouteHawkWebApp:
         button.disabled = true;
         button.textContent = "Scanning...";
       }});
+    }})();
+    (function () {{
+      const relevance = document.getElementById("dashboard-filter-relevance");
+      const confidence = document.getElementById("dashboard-filter-confidence");
+      const source = document.getElementById("dashboard-filter-source");
+      const manual = document.getElementById("dashboard-filter-manual");
+      const empty = document.getElementById("dashboard-filter-empty");
+      if (!relevance || !confidence || !source || !manual || !empty) return;
+
+      function tokens(value) {{
+        return (value || "").split(" ").filter(Boolean);
+      }}
+
+      function matches(element) {{
+        const relevanceValue = element.dataset.relevance || "medium";
+        const confidenceValue = element.dataset.confidence || "medium";
+        const sourceValue = source.value;
+        if (relevance.value === "hide-low" && relevanceValue === "low") return false;
+        if (relevance.value !== "all" && relevance.value !== "hide-low" && relevanceValue !== relevance.value) return false;
+        if (confidence.value !== "all" && confidenceValue !== confidence.value) return false;
+        if (sourceValue !== "all" && !tokens(element.dataset.sources || "").includes(sourceValue)) return false;
+        if (manual.checked && element.dataset.manualCandidate !== "true") return false;
+        return true;
+      }}
+
+      function applyEndpointFilters() {{
+        const endpoints = Array.from(document.querySelectorAll("[data-dashboard-endpoint='true']"));
+        let visible = 0;
+        endpoints.forEach((element) => {{
+          const show = matches(element);
+          element.classList.toggle("dashboard-hidden", !show);
+          if (show) visible += 1;
+        }});
+        empty.classList.toggle("hidden", endpoints.length === 0 || visible > 0);
+      }}
+
+      [relevance, confidence, source, manual].forEach((control) => {{
+        control.addEventListener("input", applyEndpointFilters);
+        control.addEventListener("change", applyEndpointFilters);
+      }});
+      applyEndpointFilters();
     }})();
   </script>
 </body>
@@ -903,13 +1009,14 @@ def _diff_changed_column(items: object) -> str:
         current_score = escape(str(item.get("current_risk_score", 0)))
         confidence = _diff_confidence(current)
         relevance = _diff_relevance(current)
+        attrs = _endpoint_filter_attrs(current, risk_score=_safe_int(item.get("current_risk_score")))
         sources = _diff_sources(current)
         source_urls = _safe_int(current.get("source_urls_count", 0))
         reason_count = _safe_int(current.get("risk_reason_count", 0))
         reason_preview = _diff_reason_preview(current)
         delta_lines = _changed_delta_lines(delta_map)
         rows.append(
-            '<div class="diff-item">'
+            f'<div class="diff-item relevance-{escape(relevance)}" {attrs}>'
             f"<code>{endpoint}</code>"
             f'<div class="diff-meta">risk {previous_score} -> {current_score} | confidence {escape(confidence)} | relevance {_relevance_badge(relevance)}</div>'
             f'<div class="diff-meta">sources {sources} | source URLs {source_urls} | reasons {reason_count}</div>'
@@ -926,13 +1033,14 @@ def _diff_item(item: Dict[str, object]) -> str:
     score = escape(str(item.get("risk_score", 0)))
     confidence = escape(_diff_confidence(item))
     relevance = _diff_relevance(item)
+    attrs = _endpoint_filter_attrs(item)
     sources = _diff_sources(item)
     tags = _diff_tags(item)
     source_urls = escape(str(_safe_int(item.get("source_urls_count", 0))))
     reason_count = escape(str(_safe_int(item.get("risk_reason_count", 0))))
     reason_preview = _diff_reason_preview(item)
     return (
-        f'<div class="diff-item relevance-{escape(relevance)}">'
+        f'<div class="diff-item relevance-{escape(relevance)}" {attrs}>'
         f"<code>{endpoint}</code>"
         f'<div class="diff-meta">risk {score} | confidence {confidence} | relevance {_relevance_badge(relevance)} | sources {sources}</div>'
         f'<div class="diff-meta">tags {tags}</div>'
@@ -943,10 +1051,17 @@ def _diff_item(item: Dict[str, object]) -> str:
 
 
 def _diff_sources(item: Dict[str, object]) -> str:
-    sources = item.get("sources", [])
-    if not isinstance(sources, list) or not sources:
+    sources = _diff_source_values(item)
+    if not sources:
         return "unknown"
     return escape(", ".join(str(source) for source in sources))
+
+
+def _diff_source_values(item: Dict[str, object]) -> list:
+    sources = item.get("sources", [])
+    if not isinstance(sources, list) or not sources:
+        return []
+    return [str(source) for source in sources if source]
 
 
 def _diff_tags(item: Dict[str, object]) -> str:
@@ -1142,13 +1257,14 @@ def _compare_endpoint_table(title: str, items: list, empty: str) -> str:
         risk = _risk_badge(_safe_int(item.get("risk_score")))
         confidence = escape(_diff_confidence(item))
         relevance = _diff_relevance(item)
+        attrs = _endpoint_filter_attrs(item)
         tags = _diff_tags(item)
         sources = _diff_sources(item)
         source_urls = escape(str(_safe_int(item.get("source_urls_count", 0))))
         reason_count = escape(str(_safe_int(item.get("risk_reason_count", 0))))
         reason_preview = _diff_reason_preview(item)
         rows.append(
-            f'<tr class="relevance-{escape(relevance)}">'
+            f'<tr class="relevance-{escape(relevance)}" {attrs}>'
             f"<td><code>{endpoint}</code></td>"
             f"<td>{risk}</td>"
             f"<td>{confidence}</td>"
@@ -1185,6 +1301,7 @@ def _compare_changed_table(items: list, empty: str) -> str:
         tags = _diff_tags(data)
         confidence = _diff_confidence(data)
         relevance = _diff_relevance(data)
+        attrs = _endpoint_filter_attrs(data, risk_score=current)
         source_urls = _safe_int(data.get("source_urls_count", 0))
         reason_count = _safe_int(data.get("risk_reason_count", 0))
         reason_preview = _diff_reason_preview(data)
@@ -1193,7 +1310,7 @@ def _compare_changed_table(items: list, empty: str) -> str:
             + _changed_delta_lines(delta_map, use_blocks=True)
         )
         rows.append(
-            f'<tr class="relevance-{escape(relevance)}">'
+            f'<tr class="relevance-{escape(relevance)}" {attrs}>'
             f"<td><code>{endpoint}</code></td>"
             f"<td>{change_details}</td>"
             f"<td>{current_badge}<br>confidence {escape(confidence)}<br>relevance {_relevance_badge(relevance)}<br>sources {sources}<br>tags {tags}<br>source URLs {escape(str(source_urls))}<br>reasons {escape(str(reason_count))}<br>preview {reason_preview}</td>"
@@ -1259,3 +1376,25 @@ def _risk_badge(score: int) -> str:
 def _relevance_badge(value: str) -> str:
     relevance = _diff_relevance({"app_relevance": value})
     return f'<span class="relevance-badge {escape(relevance)}">app relevance {escape(relevance)}</span>'
+
+
+def _endpoint_filter_attrs(item: Dict[str, object], risk_score: Optional[int] = None) -> str:
+    relevance = _diff_relevance(item)
+    confidence = _diff_confidence(item)
+    sources = " ".join(_diff_source_values(item))
+    manual_candidate = _is_manual_candidate_snapshot(item, risk_score=risk_score)
+    return (
+        'data-dashboard-endpoint="true" '
+        f'data-relevance="{escape(relevance, quote=True)}" '
+        f'data-confidence="{escape(confidence, quote=True)}" '
+        f'data-sources="{escape(sources, quote=True)}" '
+        f'data-manual-candidate="{str(manual_candidate).lower()}"'
+    )
+
+
+def _is_manual_candidate_snapshot(item: Dict[str, object], risk_score: Optional[int] = None) -> bool:
+    score = _safe_int(risk_score if risk_score is not None else item.get("risk_score"))
+    tags = set(str(tag) for tag in item.get("tags", []) if tag) if isinstance(item.get("tags"), list) else set()
+    if score >= 56:
+        return True
+    return score >= 35 and bool(tags.intersection({"admin", "internal", "debug", "graphql", "authorization", "data-export"}))
