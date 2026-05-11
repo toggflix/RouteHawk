@@ -27,7 +27,7 @@ from routehawk.analyzers.route_classifier import classify_endpoint
 from routehawk.analyzers.route_normalizer import normalize_path
 from routehawk.analyzers.security_headers import missing_security_headers
 from routehawk.analyzers.tech_fingerprint import fingerprint_headers
-from routehawk.collectors.html_assets import extract_javascript_assets
+from routehawk.collectors.html_assets import extract_javascript_asset_summary
 from routehawk.collectors.javascript_files import download_javascript
 from routehawk.collectors.live_hosts import _extract_title
 from routehawk.collectors.openapi import COMMON_OPENAPI_PATHS, endpoints_from_openapi
@@ -206,6 +206,7 @@ async def _run_scan(
         target_fingerprint=target_fingerprint(target),
         scope_fingerprint=scope_fingerprint(scope_domains),
         scope_normalization_notes=list(scope_normalization_notes or []),
+        source_coverage=_initial_source_coverage(options),
     )
     for note in result.scope_normalization_notes:
         if note not in result.warnings:
@@ -218,6 +219,10 @@ async def _run_scan(
         try:
             response = await client.get_text(target)
             html = response.text
+            result.source_coverage["homepage"] = {
+                "fetched": True,
+                "status": response.status_code,
+            }
             parsed = urlparse(response.url)
             result.assets.append(
                 Asset(
@@ -233,12 +238,19 @@ async def _run_scan(
             _append_budget_warning(result)
             return result
         except Exception as exc:
+            result.source_coverage["homepage"] = {"fetched": False, "status": None}
             result.warnings.append(f"Target fetch failed for {target}: {exc}")
             return result
 
         try:
+            if html:
+                js_summary = extract_javascript_asset_summary(target, html, validator)
+                javascript_urls = list(js_summary.get("allowed_urls", []))
+                javascript_coverage = result.source_coverage.get("javascript", {})
+                if isinstance(javascript_coverage, dict):
+                    javascript_coverage["discovered"] = int(js_summary.get("discovered", 0) or 0)
+                    javascript_coverage["skipped_out_of_scope"] = int(js_summary.get("skipped_out_of_scope", 0) or 0)
             if html and options.download_javascript:
-                javascript_urls = extract_javascript_assets(target, html, validator)
                 for javascript_url in javascript_urls:
                     try:
                         cached = await download_javascript(
@@ -250,9 +262,11 @@ async def _run_scan(
                     except RequestBudgetExceeded:
                         raise
                     except Exception as exc:
+                        _increment_source_coverage_counter(result, "javascript", "failed")
                         result.warnings.append(f"JavaScript fetch failed for {javascript_url}: {exc}")
                         continue
                     endpoints = _endpoints_from_text(javascript_text, "javascript", javascript_url, suppression)
+                    _increment_source_coverage_counter(result, "javascript", "downloaded")
                     result.javascript_files.append(
                         JavaScriptFile(
                             url=javascript_url,
@@ -265,12 +279,17 @@ async def _run_scan(
                     result.endpoints.extend(endpoints)
 
             if options.parse_robots:
+                _set_source_coverage_checked(result, "robots")
                 await _collect_robots(client, root_url, result, validator, suppression)
             if options.parse_sitemap:
+                _set_source_coverage_checked(result, "sitemap")
                 await _collect_sitemap(client, root_url, result, validator, suppression)
             if options.parse_openapi:
+                _set_source_coverage_checked(result, "openapi")
                 await _collect_openapi(client, root_url, result)
             if options.check_common_metadata:
+                _set_source_coverage_checked(result, "security_txt")
+                _set_source_coverage_checked(result, "graphql")
                 await _collect_security_txt(client, root_url, result)
                 await _collect_graphql(client, root_url, result, suppression)
         except RequestBudgetExceeded:
@@ -300,9 +319,11 @@ async def _collect_robots(
     robots_url = urljoin(root_url, "/robots.txt")
     try:
         response = await client.get_text(robots_url)
+        _set_source_coverage_status(result, "robots", response.status_code)
     except RequestBudgetExceeded:
         raise
     except Exception as exc:
+        _set_source_coverage_status(result, "robots", None)
         result.warnings.append(f"robots.txt fetch failed for {robots_url}: {exc}")
         return
     if response.status_code >= 400:
@@ -332,9 +353,11 @@ async def _collect_sitemap(
     sitemap_url = urljoin(root_url, "/sitemap.xml")
     try:
         response = await client.get_text(sitemap_url)
+        _set_source_coverage_status(result, "sitemap", response.status_code)
     except RequestBudgetExceeded:
         raise
     except Exception as exc:
+        _set_source_coverage_status(result, "sitemap", None)
         result.warnings.append(f"sitemap.xml fetch failed for {sitemap_url}: {exc}")
         return
     if response.status_code >= 400:
@@ -362,6 +385,11 @@ async def _collect_openapi(
     root_url: str,
     result: ScanResult,
 ) -> None:
+    coverage = _source_coverage_section(result, "openapi")
+    if coverage is not None:
+        coverage["checked"] = True
+        coverage["candidates_checked"] = len(COMMON_OPENAPI_PATHS)
+        coverage["found"] = 0
     for path in COMMON_OPENAPI_PATHS:
         spec_url = urljoin(root_url, path)
         try:
@@ -387,6 +415,8 @@ async def _collect_openapi(
             )
         )
         result.endpoints.extend(endpoints)
+        if coverage is not None:
+            coverage["found"] = int(coverage.get("found", 0)) + 1
 
 
 async def _collect_security_txt(
@@ -397,9 +427,11 @@ async def _collect_security_txt(
     security_url = urljoin(root_url, "/.well-known/security.txt")
     try:
         response = await client.get_text(security_url)
+        _set_source_coverage_status(result, "security_txt", response.status_code)
     except RequestBudgetExceeded:
         raise
     except Exception as exc:
+        _set_source_coverage_status(result, "security_txt", None)
         result.warnings.append(f"security.txt fetch failed for {security_url}: {exc}")
         return
     if response.status_code >= 400:
@@ -424,6 +456,11 @@ async def _collect_graphql(
     result: ScanResult,
     suppression: SuppressionConfig,
 ) -> None:
+    coverage = _source_coverage_section(result, "graphql")
+    if coverage is not None:
+        coverage["checked"] = True
+        coverage["candidates_checked"] = len(GRAPHQL_CANDIDATE_PATHS)
+        coverage["found"] = 0
     for path in GRAPHQL_CANDIDATE_PATHS:
         url = urljoin(root_url, path)
         get_status = None
@@ -462,6 +499,8 @@ async def _collect_graphql(
                 )
             )
             result.endpoints.extend(_endpoints_from_text(path, "graphql", url, suppression))
+            if coverage is not None:
+                coverage["found"] = int(coverage.get("found", 0)) + 1
 
 
 def _looks_like_existing_graphql(get_status, post_status, response_hint: bool) -> bool:
@@ -493,6 +532,10 @@ async def _collect_auth_behavior(
     result: ScanResult,
     limit: int,
 ) -> None:
+    coverage = _source_coverage_section(result, "auth_behavior")
+    if coverage is not None:
+        coverage["enabled"] = True
+        coverage["probe_limit"] = max(0, int(limit or 0))
     for endpoint in result.endpoints[: max(0, limit)]:
         raw_path = (endpoint.raw_paths or [endpoint.raw_path])[0]
         url = urljoin(root_url, raw_path)
@@ -807,6 +850,9 @@ def _report(args: argparse.Namespace) -> int:
         scope_normalization_notes=[str(item) for item in data.get("scope_normalization_notes", []) if item is not None]
         if isinstance(data.get("scope_normalization_notes"), list)
         else [],
+        source_coverage=data.get("source_coverage", {})
+        if isinstance(data.get("source_coverage"), dict)
+        else {},
         assets=assets,
         endpoints=endpoints,
         findings=findings,
@@ -1064,6 +1110,7 @@ def _result_to_json(result: ScanResult) -> dict:
         "target_fingerprint": result.target_fingerprint,
         "scope_fingerprint": result.scope_fingerprint,
         "scope_normalization_notes": result.scope_normalization_notes,
+        "source_coverage": result.source_coverage,
         "assets": [asset.to_dict() for asset in result.assets],
         "javascript_files": [item.to_dict() for item in result.javascript_files],
         "metadata": [item.to_dict() for item in result.metadata],
@@ -1078,6 +1125,54 @@ def _safe_int(value: object) -> int:
         return int(value or 0)
     except (TypeError, ValueError):
         return 0
+
+
+def _initial_source_coverage(options: ScanOptions) -> dict:
+    return {
+        "homepage": {"fetched": False, "status": None},
+        "javascript": {
+            "discovered": 0,
+            "downloaded": 0,
+            "skipped_out_of_scope": 0,
+            "failed": 0,
+        },
+        "robots": {"checked": False, "status": None},
+        "sitemap": {"checked": False, "status": None},
+        "security_txt": {"checked": False, "status": None},
+        "openapi": {"checked": False, "candidates_checked": 0, "found": 0},
+        "graphql": {"checked": False, "candidates_checked": 0, "found": 0},
+        "auth_behavior": {
+            "enabled": bool(options.check_auth_behavior),
+            "probe_limit": int(options.auth_probe_limit or 0),
+        },
+    }
+
+
+def _source_coverage_section(result: ScanResult, key: str) -> Optional[dict]:
+    if not isinstance(result.source_coverage, dict):
+        return None
+    value = result.source_coverage.get(key)
+    return value if isinstance(value, dict) else None
+
+
+def _set_source_coverage_checked(result: ScanResult, key: str) -> None:
+    section = _source_coverage_section(result, key)
+    if section is not None:
+        section["checked"] = True
+
+
+def _set_source_coverage_status(result: ScanResult, key: str, status: Optional[int]) -> None:
+    section = _source_coverage_section(result, key)
+    if section is not None:
+        section["checked"] = True
+        section["status"] = status
+
+
+def _increment_source_coverage_counter(result: ScanResult, key: str, counter: str) -> None:
+    section = _source_coverage_section(result, key)
+    if section is None:
+        return
+    section[counter] = int(section.get(counter, 0) or 0) + 1
 
 
 def _normalize_extraction_confidence(value: str) -> str:

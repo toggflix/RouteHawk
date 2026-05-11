@@ -10,6 +10,7 @@ from routehawk.reports.summary import build_summary
 
 def render_html(result: ScanResult, triage_load_url: str = "", triage_update_url: str = "") -> str:
     summary = build_summary(result)
+    coverage = _source_coverage(result)
     cards = _summary_cards(summary)
     source_options = _select_options(summary.source_counts.keys())
     type_options = _select_options(sorted({finding.type for finding in result.findings}))
@@ -19,8 +20,10 @@ def render_html(result: ScanResult, triage_load_url: str = "", triage_update_url
     findings = _finding_cards(result)
     endpoints = _endpoint_rows(result)
     warnings = _warnings(result)
-    source_coverage = _count_list(summary.source_counts, empty="No endpoint sources recorded.")
+    source_coverage = _source_coverage_rows(coverage)
+    source_breakdown = _count_list(summary.source_counts, empty="No endpoint sources recorded.")
     tag_coverage = _count_list(summary.tag_counts, empty="No classifier tags recorded.")
+    scan_explanation = _scan_explanation_items(result, coverage, summary.high_risk_count)
     route_groups = _route_group_rows(summary.route_groups)
     triage_load = json.dumps(triage_load_url)
     triage_update = json.dumps(triage_update_url)
@@ -273,8 +276,18 @@ def render_html(result: ScanResult, triage_load_url: str = "", triage_update_url
         {source_coverage}
       </div>
       <div class="panel">
+        <h2>Endpoint Source Breakdown</h2>
+        {source_breakdown}
+      </div>
+    </section>
+    <section class="grid columns">
+      <div class="panel">
         <h2>Classifier Tags</h2>
         {tag_coverage}
+      </div>
+      <div class="panel">
+        <h2>Scan Explanation</h2>
+        {scan_explanation}
       </div>
     </section>
     <section>
@@ -685,7 +698,7 @@ def _endpoint_row(endpoint: Endpoint) -> str:
         f"<td><code>{escape(endpoint.normalized_path)}</code><br><span class=\"meta\">Raw variants: {len(endpoint.raw_paths or [endpoint.raw_path])}</span></td>"
         f'<td><span class="score {severity}">{endpoint.risk_score}</span><br><span class="meta">{escape(severity)}</span></td>'
         f"<td>{escape(endpoint.extraction_confidence)}</td>"
-        f'<td><span class="badge {relevance}">{escape(relevance)}</span>{relevance_reason_html}</td>'
+        f'<td><span class="badge {relevance}">App relevance: {escape(relevance)}</span>{relevance_reason_html}</td>'
         f'<td title="{escape(source_title)}">{_pills(sources)}</td>'
         f"<td>{tag_html}</td>"
         f"<td>{reason_html}</td>"
@@ -735,4 +748,121 @@ def _finding_draft(finding) -> str:
         f"{evidence}\n\n"
         "### Manual Test Plan\n"
         f"{manual}\n"
+    )
+
+
+def _source_coverage(result: ScanResult) -> dict:
+    value = result.source_coverage
+    return value if isinstance(value, dict) else {}
+
+
+def _source_coverage_rows(coverage: dict) -> str:
+    homepage = _coverage_section(coverage, "homepage")
+    javascript = _coverage_section(coverage, "javascript")
+    robots = _coverage_section(coverage, "robots")
+    sitemap = _coverage_section(coverage, "sitemap")
+    security_txt = _coverage_section(coverage, "security_txt")
+    openapi = _coverage_section(coverage, "openapi")
+    graphql = _coverage_section(coverage, "graphql")
+    auth_behavior = _coverage_section(coverage, "auth_behavior")
+    rows = [
+        ("Homepage", f"fetched {_bool_text(homepage.get('fetched'))} | status {_status_text(homepage.get('status'))}"),
+        (
+            "JavaScript",
+            "discovered "
+            f"{_safe_int(javascript.get('discovered'))} | downloaded {_safe_int(javascript.get('downloaded'))} | "
+            f"skipped out-of-scope {_safe_int(javascript.get('skipped_out_of_scope'))} | failed {_safe_int(javascript.get('failed'))}",
+        ),
+        ("robots.txt", f"checked {_bool_text(robots.get('checked'))} | status {_status_text(robots.get('status'))}"),
+        ("sitemap.xml", f"checked {_bool_text(sitemap.get('checked'))} | status {_status_text(sitemap.get('status'))}"),
+        ("security.txt", f"checked {_bool_text(security_txt.get('checked'))} | status {_status_text(security_txt.get('status'))}"),
+        (
+            "OpenAPI",
+            f"checked {_bool_text(openapi.get('checked'))} | candidates {_safe_int(openapi.get('candidates_checked'))} | found {_safe_int(openapi.get('found'))}",
+        ),
+        (
+            "GraphQL",
+            f"checked {_bool_text(graphql.get('checked'))} | candidates {_safe_int(graphql.get('candidates_checked'))} | found {_safe_int(graphql.get('found'))}",
+        ),
+        (
+            "Auth behavior",
+            f"enabled {_bool_text(auth_behavior.get('enabled'))} | probe limit {_safe_int(auth_behavior.get('probe_limit'))}",
+        ),
+    ]
+    return "<ul>" + "".join(
+        f"<li><strong>{escape(label)}:</strong> {escape(text)}</li>"
+        for label, text in rows
+    ) + "</ul>"
+
+
+def _scan_explanation_items(result: ScanResult, coverage: dict, high_risk_count: int) -> str:
+    homepage = _coverage_section(coverage, "homepage")
+    javascript = _coverage_section(coverage, "javascript")
+    auth_behavior = _coverage_section(coverage, "auth_behavior")
+    discovered = _safe_int(javascript.get("discovered"))
+    downloaded = _safe_int(javascript.get("downloaded"))
+    skipped = _safe_int(javascript.get("skipped_out_of_scope"))
+
+    lines = []
+    if homepage.get("fetched"):
+        lines.append(f"Target fetched successfully (status {_status_text(homepage.get('status'))}).")
+    else:
+        lines.append("Target fetch failed or was not completed.")
+    lines.append(f"{downloaded} JavaScript files were downloaded.")
+    if discovered == 0:
+        lines.append("No JavaScript assets were discovered on the fetched page.")
+    elif downloaded == 0:
+        lines.append("JavaScript assets were discovered, but none were downloaded. They may be outside configured scope or unavailable.")
+    if skipped > 0:
+        lines.append(f"Skipped {skipped} JavaScript assets because they were outside configured scope.")
+    lines.append(f"{len(result.endpoints)} endpoint candidates were found.")
+    lines.append(f"{len(result.findings)} manual review candidates were generated.")
+    if high_risk_count == 0:
+        lines.append("No high-risk candidates were found.")
+    if not auth_behavior.get("enabled"):
+        lines.append("Auth behavior checks were disabled.")
+    else:
+        lines.append(f"Auth behavior checks were enabled with probe limit {_safe_int(auth_behavior.get('probe_limit'))}.")
+    if _has_budget_warning(result.warnings):
+        lines.append("Request budget was enabled and the scan stopped early after reaching the budget.")
+    else:
+        lines.append("Request budget was enabled.")
+    for warning in result.warnings:
+        text = str(warning)
+        if text.startswith("No previous scan found for this target/scope"):
+            lines.append(text)
+            break
+
+    return "<ul>" + "".join(f"<li>{escape(line)}</li>" for line in lines) + "</ul>"
+
+
+def _coverage_section(coverage: dict, key: str) -> dict:
+    value = coverage.get(key, {})
+    return value if isinstance(value, dict) else {}
+
+
+def _bool_text(value: object) -> str:
+    return "yes" if bool(value) else "no"
+
+
+def _status_text(value: object) -> str:
+    try:
+        if value is None:
+            return "n/a"
+        return str(int(value))
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _safe_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _has_budget_warning(warnings: list) -> bool:
+    return any(
+        "Request budget exceeded; scan stopped early." in str(item)
+        for item in warnings
     )

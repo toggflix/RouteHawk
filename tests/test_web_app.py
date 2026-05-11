@@ -82,9 +82,10 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("/api/admin/export", html)
         self.assertIn("/debug/config", html)
         self.assertIn("risk 55 -> 80", html)
-        self.assertIn("confidence: medium -> high", html)
-        self.assertIn("app relevance: medium -> high", html)
-        self.assertIn("app relevance high", html)
+        self.assertIn("Extraction confidence: medium -> high", html)
+        self.assertIn("App relevance: medium -> high", html)
+        self.assertIn("App relevance: high", html)
+        self.assertNotIn("relevance app relevance", html)
         self.assertIn("relevance-low", html)
         self.assertIn('data-dashboard-endpoint="true"', html)
         self.assertIn('data-relevance="high"', html)
@@ -321,10 +322,11 @@ class WebAppTests(unittest.TestCase):
         self.assertIn("/api/billing/{id}", html)
         self.assertIn("Changed endpoints", html)
         self.assertIn("risk score: 55 -> 80", html)
-        self.assertIn("confidence: medium -> high", html)
-        self.assertIn("app relevance: medium -> high", html)
+        self.assertIn("Extraction confidence: medium -> high", html)
+        self.assertIn("App relevance: medium -> high", html)
         self.assertIn("App Relevance", html)
-        self.assertIn("app relevance high", html)
+        self.assertIn("App relevance: high", html)
+        self.assertNotIn("relevance app relevance", html)
         self.assertIn('data-dashboard-endpoint="true"', html)
         self.assertIn('data-relevance="high"', html)
         self.assertIn('data-confidence="high"', html)
@@ -548,6 +550,48 @@ class WebAppTests(unittest.TestCase):
             self.assertTrue(diff.get("baseline"))
             self.assertEqual(diff.get("removed_count"), 0)
             self.assertEqual(diff.get("new_count"), 0)
+
+    def test_dashboard_renders_source_coverage_and_scan_explanation_panels(self):
+        with TemporaryDirectory() as temporary:
+            app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
+            result = ScanResult(
+                target="https://example.com",
+                scope=["example.com"],
+                source_coverage={
+                    "homepage": {"fetched": True, "status": 200},
+                    "javascript": {"discovered": 2, "downloaded": 0, "skipped_out_of_scope": 2, "failed": 0},
+                    "robots": {"checked": True, "status": 200},
+                    "sitemap": {"checked": True, "status": 200},
+                    "security_txt": {"checked": True, "status": 404},
+                    "openapi": {"checked": True, "candidates_checked": 6, "found": 0},
+                    "graphql": {"checked": True, "candidates_checked": 3, "found": 0},
+                    "auth_behavior": {"enabled": False, "probe_limit": 0},
+                },
+            )
+            app._write_outputs(result)
+            html = app._dashboard({"scan": ["complete"]})
+
+            self.assertIn("Source Coverage", html)
+            self.assertIn("Scan Explanation", html)
+            self.assertIn("JavaScript assets were discovered, but none were downloaded.", html)
+            self.assertIn("Skipped 2 JavaScript assets because they were outside configured scope.", html)
+            self.assertIn("Auth behavior checks were disabled.", html)
+
+    def test_dashboard_scan_explanation_includes_baseline_message(self):
+        with TemporaryDirectory() as temporary:
+            app = RouteHawkWebApp("127.0.0.1", 0, Path(temporary))
+            result = ScanResult(
+                target="https://example.com",
+                scope=["example.com"],
+                source_coverage={
+                    "homepage": {"fetched": True, "status": 200},
+                    "javascript": {"discovered": 0, "downloaded": 0, "skipped_out_of_scope": 0, "failed": 0},
+                    "auth_behavior": {"enabled": False, "probe_limit": 0},
+                },
+            )
+            app._write_outputs(result)
+            html = app._dashboard({"scan": ["complete"]})
+            self.assertIn("No previous scan found for this target/scope. This run is now the baseline.", html)
 
     def test_rebuilds_scan_result_from_json_payload(self):
         result = _scan_result_from_payload(

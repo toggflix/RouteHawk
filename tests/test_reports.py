@@ -138,6 +138,16 @@ class ReportTests(unittest.TestCase):
         result = ScanResult(
             target="https://example.com",
             scope=["example.com"],
+            source_coverage={
+                "homepage": {"fetched": True, "status": 200},
+                "javascript": {"discovered": 2, "downloaded": 0, "skipped_out_of_scope": 2, "failed": 0},
+                "robots": {"checked": True, "status": 200},
+                "sitemap": {"checked": True, "status": 200},
+                "security_txt": {"checked": True, "status": 200},
+                "openapi": {"checked": True, "candidates_checked": 6, "found": 0},
+                "graphql": {"checked": True, "candidates_checked": 3, "found": 0},
+                "auth_behavior": {"enabled": False, "probe_limit": 0},
+            },
             javascript_files=[
                 JavaScriptFile(
                     url="https://example.com/main.js",
@@ -162,8 +172,18 @@ class ReportTests(unittest.TestCase):
 
         self.assertIn("JavaScript Files", markdown)
         self.assertIn("security.txt", markdown)
+        self.assertIn("Scan Explanation", markdown)
+        self.assertNotIn("No JavaScript assets were discovered on the fetched page.", markdown)
+        self.assertIn("JavaScript assets were discovered, but none were downloaded.", markdown)
+        self.assertIn("Skipped `2` JavaScript assets because they were outside configured scope.", markdown)
+        self.assertIn("Auth behavior checks were disabled.", markdown)
         self.assertIn("JavaScript Files", html)
         self.assertIn("Metadata", html)
+        self.assertIn("Source Coverage", html)
+        self.assertIn("Scan Explanation", html)
+        self.assertIn("JavaScript assets were discovered, but none were downloaded.", html)
+        self.assertIn("Skipped 2 JavaScript assets because they were outside configured scope.", html)
+        self.assertIn("Auth behavior checks were disabled.", html)
 
     def test_graphql_candidate_uses_graphql_checklist(self):
         endpoint = Endpoint(

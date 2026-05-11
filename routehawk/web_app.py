@@ -193,6 +193,8 @@ class RouteHawkWebApp:
             "removed_endpoints": diff["removed_count"],
             "changed_endpoints": diff["changed_count"],
             "warnings": summary.warning_count,
+            "warnings_list": list(result.warnings),
+            "source_coverage": result.source_coverage if isinstance(result.source_coverage, dict) else {},
         }
         self._write_run_files(self.run_dir, results_json, report_html, report_md, diff_json, metadata)
         self._write_run_files(history_dir, results_json, report_html, report_md, diff_json, metadata)
@@ -267,6 +269,8 @@ class RouteHawkWebApp:
         latest_run_id = str(runs[0].get("run_id", "")) if runs else ""
         compare = self._build_compare_context(query or {}, runs)
         last_run = _last_run_panel(summary, error)
+        source_coverage_panel = _dashboard_source_coverage_panel(summary)
+        scan_explanation_panel = _dashboard_scan_explanation_panel(summary, diff)
         diff_panel = _diff_panel(diff)
         compare_panel = _compare_panel(runs, compare)
         history = _history_panel(runs, latest_run_id)
@@ -593,6 +597,14 @@ class RouteHawkWebApp:
         </label>
       </div>
       <p id="dashboard-filter-empty" class="hint hidden">No endpoints match the selected filters.</p>
+    </section>
+    <section class="panel" style="margin-top: 18px;">
+      <h2>Source Coverage</h2>
+      {source_coverage_panel}
+    </section>
+    <section class="panel" style="margin-top: 18px;">
+      <h2>Scan Explanation</h2>
+      {scan_explanation_panel}
     </section>
     <section class="panel" style="margin-top: 18px;">
       <h2>Latest Diff</h2>
@@ -1024,6 +1036,87 @@ def _last_run_panel(summary: Dict[str, object], error: str) -> str:
     """
 
 
+def _dashboard_source_coverage_panel(summary: Dict[str, object]) -> str:
+    coverage = _summary_source_coverage(summary)
+    homepage = _coverage_section(coverage, "homepage")
+    javascript = _coverage_section(coverage, "javascript")
+    robots = _coverage_section(coverage, "robots")
+    sitemap = _coverage_section(coverage, "sitemap")
+    security_txt = _coverage_section(coverage, "security_txt")
+    openapi = _coverage_section(coverage, "openapi")
+    graphql = _coverage_section(coverage, "graphql")
+    auth_behavior = _coverage_section(coverage, "auth_behavior")
+    rows = [
+        ("Homepage", f"fetched {_bool_word(homepage.get('fetched'))} | status {_status_word(homepage.get('status'))}"),
+        (
+            "JavaScript",
+            "discovered "
+            f"{_safe_int(javascript.get('discovered'))} | downloaded {_safe_int(javascript.get('downloaded'))} | "
+            f"skipped out-of-scope {_safe_int(javascript.get('skipped_out_of_scope'))} | failed {_safe_int(javascript.get('failed'))}",
+        ),
+        ("robots.txt", f"checked {_bool_word(robots.get('checked'))} | status {_status_word(robots.get('status'))}"),
+        ("sitemap.xml", f"checked {_bool_word(sitemap.get('checked'))} | status {_status_word(sitemap.get('status'))}"),
+        ("security.txt", f"checked {_bool_word(security_txt.get('checked'))} | status {_status_word(security_txt.get('status'))}"),
+        (
+            "OpenAPI",
+            f"checked {_bool_word(openapi.get('checked'))} | candidates {_safe_int(openapi.get('candidates_checked'))} | found {_safe_int(openapi.get('found'))}",
+        ),
+        (
+            "GraphQL",
+            f"checked {_bool_word(graphql.get('checked'))} | candidates {_safe_int(graphql.get('candidates_checked'))} | found {_safe_int(graphql.get('found'))}",
+        ),
+        (
+            "Auth behavior",
+            f"enabled {_bool_word(auth_behavior.get('enabled'))} | probe limit {_safe_int(auth_behavior.get('probe_limit'))}",
+        ),
+    ]
+    return "<ul>" + "".join(
+        f"<li><strong>{escape(label)}:</strong> {escape(text)}</li>"
+        for label, text in rows
+    ) + "</ul>"
+
+
+def _dashboard_scan_explanation_panel(summary: Dict[str, object], diff: Dict[str, object]) -> str:
+    if not summary:
+        return '<p class="hint">No scan explanation yet. Run a scan to populate coverage and outcome notes.</p>'
+
+    coverage = _summary_source_coverage(summary)
+    homepage = _coverage_section(coverage, "homepage")
+    javascript = _coverage_section(coverage, "javascript")
+    auth_behavior = _coverage_section(coverage, "auth_behavior")
+    discovered = _safe_int(javascript.get("discovered"))
+    downloaded = _safe_int(javascript.get("downloaded"))
+    skipped = _safe_int(javascript.get("skipped_out_of_scope"))
+    lines = []
+    if homepage.get("fetched"):
+        lines.append(f"Target fetched successfully (status {_status_word(homepage.get('status'))}).")
+    else:
+        lines.append("Target fetch failed or was not completed.")
+    lines.append(f"{downloaded} JavaScript files were downloaded.")
+    if discovered == 0:
+        lines.append("No JavaScript assets were discovered on the fetched page.")
+    elif downloaded == 0:
+        lines.append("JavaScript assets were discovered, but none were downloaded. They may be outside configured scope or unavailable.")
+    if skipped > 0:
+        lines.append(f"Skipped {skipped} JavaScript assets because they were outside configured scope.")
+    lines.append(f"{_safe_int(summary.get('endpoints'))} endpoint candidates were found.")
+    lines.append(f"{_safe_int(summary.get('findings'))} manual review candidates were generated.")
+    if _safe_int(summary.get("high_risk")) == 0:
+        lines.append("No high-risk candidates were found.")
+    if not auth_behavior.get("enabled"):
+        lines.append("Auth behavior checks were disabled.")
+    else:
+        lines.append(f"Auth behavior checks were enabled with probe limit {_safe_int(auth_behavior.get('probe_limit'))}.")
+    if _summary_has_budget_warning(summary):
+        lines.append("Request budget was enabled and the scan stopped early after reaching the budget.")
+    else:
+        lines.append("Request budget was enabled.")
+    baseline_message = str(diff.get("baseline_message", "")).strip() if isinstance(diff, dict) else ""
+    if baseline_message:
+        lines.append(baseline_message)
+    return "<ul>" + "".join(f"<li>{escape(line)}</li>" for line in lines) + "</ul>"
+
+
 def _diff_panel(diff: Dict[str, object]) -> str:
     if not diff:
         return """
@@ -1103,7 +1196,7 @@ def _diff_changed_column(items: object) -> str:
         rows.append(
             f'<div class="diff-item relevance-{escape(relevance)}" {attrs}>'
             f"<code>{endpoint}</code>"
-            f'<div class="diff-meta">risk {previous_score} -> {current_score} | confidence {escape(confidence)} | relevance {_relevance_badge(relevance)}</div>'
+            f'<div class="diff-meta">risk {previous_score} -> {current_score} | Extraction confidence: {escape(confidence)} | {_relevance_badge(relevance)}</div>'
             f'<div class="diff-meta">sources {sources} | source URLs {source_urls} | reasons {reason_count}</div>'
             f'<div class="diff-meta">reason preview {reason_preview}</div>'
             f"{delta_lines}"
@@ -1127,7 +1220,7 @@ def _diff_item(item: Dict[str, object]) -> str:
     return (
         f'<div class="diff-item relevance-{escape(relevance)}" {attrs}>'
         f"<code>{endpoint}</code>"
-        f'<div class="diff-meta">risk {score} | confidence {confidence} | relevance {_relevance_badge(relevance)} | sources {sources}</div>'
+        f'<div class="diff-meta">risk {score} | Extraction confidence: {confidence} | {_relevance_badge(relevance)} | sources {sources}</div>'
         f'<div class="diff-meta">tags {tags}</div>'
         f'<div class="diff-meta">source URLs {source_urls} | reasons {reason_count}</div>'
         f'<div class="diff-meta">reason preview {reason_preview}</div>'
@@ -1324,6 +1417,9 @@ def _scan_result_from_payload(payload: Dict[str, object]) -> ScanResult:
         ]
         if isinstance(payload.get("scope_normalization_notes"), list)
         else [],
+        source_coverage=payload.get("source_coverage", {})
+        if isinstance(payload.get("source_coverage"), dict)
+        else {},
         assets=[Asset(**item) for item in _dict_items(payload.get("assets"))],
         endpoints=[Endpoint(**item) for item in _dict_items(payload.get("endpoints"))],
         findings=[Finding(**item) for item in _dict_items(payload.get("findings"))],
@@ -1339,6 +1435,36 @@ def _scan_result_from_payload(payload: Dict[str, object]) -> ScanResult:
 
 def _dict_items(value: object) -> list:
     return [item for item in value if isinstance(item, dict)] if isinstance(value, list) else []
+
+
+def _summary_source_coverage(summary: Dict[str, object]) -> Dict[str, object]:
+    value = summary.get("source_coverage", {}) if isinstance(summary, dict) else {}
+    return value if isinstance(value, dict) else {}
+
+
+def _coverage_section(coverage: Dict[str, object], key: str) -> Dict[str, object]:
+    value = coverage.get(key, {})
+    return value if isinstance(value, dict) else {}
+
+
+def _bool_word(value: object) -> str:
+    return "yes" if bool(value) else "no"
+
+
+def _status_word(value: object) -> str:
+    try:
+        if value is None:
+            return "n/a"
+        return str(int(value))
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _summary_has_budget_warning(summary: Dict[str, object]) -> bool:
+    warnings = summary.get("warnings_list", [])
+    if isinstance(warnings, list):
+        return any("Request budget exceeded; scan stopped early." in str(item) for item in warnings)
+    return False
 
 
 def _compare_link(href: str) -> str:
@@ -1429,7 +1555,7 @@ def _compare_changed_table(items: list, empty: str) -> str:
             f'<tr class="relevance-{escape(relevance)}" {attrs}>'
             f"<td><code>{endpoint}</code></td>"
             f"<td>{change_details}</td>"
-            f"<td>{current_badge}<br>confidence {escape(confidence)}<br>relevance {_relevance_badge(relevance)}<br>sources {sources}<br>tags {tags}<br>source URLs {escape(str(source_urls))}<br>reasons {escape(str(reason_count))}<br>preview {reason_preview}</td>"
+            f"<td>{current_badge}<br>Extraction confidence: {escape(confidence)}<br>{_relevance_badge(relevance)}<br>sources {sources}<br>tags {tags}<br>source URLs {escape(str(source_urls))}<br>reasons {escape(str(reason_count))}<br>preview {reason_preview}</td>"
             "</tr>"
         )
     return (
@@ -1448,10 +1574,10 @@ def _changed_delta_lines(delta_map: Dict[str, object], use_blocks: bool = False)
     lines = []
     confidence = delta_map.get("extraction_confidence")
     if isinstance(confidence, dict):
-        lines.append(_delta_line("confidence", confidence))
+        lines.append(_delta_line("Extraction confidence", confidence))
     relevance = delta_map.get("app_relevance")
     if isinstance(relevance, dict):
-        lines.append(_delta_line("app relevance", relevance))
+        lines.append(_delta_line("App relevance", relevance))
     tags = delta_map.get("tags")
     if isinstance(tags, dict):
         lines.append(_delta_list_line("tags", tags))
@@ -1491,7 +1617,7 @@ def _risk_badge(score: int) -> str:
 
 def _relevance_badge(value: str) -> str:
     relevance = _diff_relevance({"app_relevance": value})
-    return f'<span class="relevance-badge {escape(relevance)}">app relevance {escape(relevance)}</span>'
+    return f'<span class="relevance-badge {escape(relevance)}">App relevance: {escape(relevance)}</span>'
 
 
 def _endpoint_filter_attrs(item: Dict[str, object], risk_score: Optional[int] = None) -> str:

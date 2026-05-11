@@ -204,6 +204,10 @@ Docs/demo:
 - dashboard and reports now surface app relevance alongside extraction confidence
 - v0.2 release-prep docs added: CHANGELOG, SECURITY, CONTRIBUTING, release checklist, screenshot policy
 - target-aware history/diff and scope input normalization workflow improvements added
+- source coverage model added to scan results (homepage/js/metadata/auth coverage)
+- skipped out-of-scope JavaScript visibility added in reports and dashboard explanation
+- dashboard and report scan explanation panels added to explain low-result scans
+- dashboard wording cleanup applied for relevance/confidence labels
 
 Automation:
 
@@ -229,7 +233,7 @@ Demo lab:
 Latest test command passed:
 
 ```text
-93 tests OK
+110 tests OK
 ```
 
 Latest compile check passed:

@@ -82,6 +82,11 @@ Dashboard endpoint filters can narrow latest diff and compare views by:
 
 Low relevance endpoints are visually muted. Filters are client-side and do not change stored scan results.
 
+Dashboard now also shows:
+
+- Source Coverage (homepage, JavaScript, robots, sitemap, security.txt, OpenAPI, GraphQL, auth behavior)
+- Scan Explanation (what happened during collection and why output volume may be low)
+
 Finding review buttons in dashboard-generated reports are persisted locally in:
 
 ```text
@@ -124,6 +129,26 @@ Endpoint risk and app relevance are tracked separately:
 - Reviewers should still manually verify scope, ownership, and business relevance before testing.
 
 Reports show app relevance and short relevance reasons next to endpoint confidence so noisy route collections are easier to triage.
+
+## Source Coverage and JavaScript 0 Cases
+
+Each scan stores a structured `source_coverage` summary. It explains:
+
+- whether the homepage was fetched
+- how many JavaScript assets were discovered
+- how many JavaScript files were downloaded
+- how many JavaScript assets were skipped as out-of-scope
+- how many JavaScript downloads failed
+- which metadata sources were checked and their status
+
+If JavaScript files are `0`, that does not always mean RouteHawk failed.
+Common reasons:
+
+- no script assets were discovered on the fetched page
+- script assets existed but were out-of-scope and skipped
+- script assets were unavailable and download attempts failed
+
+Reports and dashboard scan explanation panels display these conditions directly.
 
 ## CLI
 

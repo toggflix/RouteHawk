@@ -134,6 +134,7 @@ class ScanResult:
     target_fingerprint: str = ""
     scope_fingerprint: str = ""
     scope_normalization_notes: List[str] = field(default_factory=list)
+    source_coverage: Dict[str, object] = field(default_factory=dict)
     assets: List[Asset] = field(default_factory=list)
     endpoints: List[Endpoint] = field(default_factory=list)
     findings: List[Finding] = field(default_factory=list)
